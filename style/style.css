@@ -1,0 +1,24 @@
+body {
+  background: white;
+  width: 100vw;
+  height: 100vh;
+
+  overflow: hidden;
+}
+
+canvas {
+  background: skyblue;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+#collisionCanvas {
+  background: red;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  opacity: 0.3;
+}

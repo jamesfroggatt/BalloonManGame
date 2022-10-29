@@ -1,0 +1,15 @@
+[
+  { "x": 69, "y": 116, "offset": "", "pos": 0 },
+  { "x": 29, "y": 109, "offset": 7, "pos": 40 },
+  { "x": 2, "y": 71, "offset": 1, "pos": 80 },
+  { "x": 1, "y": 59, "offset": "-", "pos": 92, "vertex": true },
+  { "x": 7, "y": 31, "offset": 1, "pos": 120 },
+  { "x": 44, "y": 2, "offset": 2, "pos": 160 },
+  { "x": 58, "y": 1, "offset": "-", "pos": 174, "vertex": true },
+  { "x": 84, "y": 6, "offset": 3, "pos": 200 },
+  { "x": 114, "y": 42, "offset": 5, "pos": 240 },
+  { "x": 116, "y": 58, "offset": "-", "pos": 256, "vertex": true },
+  { "x": 112, "y": 82, "offset": 5, "pos": 280 },
+  { "x": 77, "y": 114, "offset": 6, "pos": 320 },
+  { "x": 69, "y": 116, "offset": "", "pos": 0 }
+]
