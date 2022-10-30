@@ -1661,7 +1661,7 @@ class GoldenCoin {
     this.shrinkRate = 0.9;
 
     // target of where we want the coin to move to ( just after the = sign)
-    this.targetX = 340;
+    this.targetX = 335;
     this.targetY = 10;
     this.movingCoinToTarget = 0;
 
@@ -2865,7 +2865,6 @@ function animate(timeStamp = 0) {
       if (
         gameOverObjectArray[0].fontSize === gameOverObjectArray[0].maxfontSize
       ) {
-        gameStatus = false;
         // the game theme tune has completed fading at this point, so we now
         // stop this play and then put the volume back to 'full volume' (1).
         // If this isn't done, the theme tune won't replay properly whne the
@@ -2874,6 +2873,8 @@ function animate(timeStamp = 0) {
         soundsArray
           .find(e => e.name === 'lifeIsBeautifulSound')
           .sound.volume(1);
+
+        gameStatus = false;
       }
 
       break;
@@ -2998,14 +2999,7 @@ function resetGame() {
 //press spaceBar to start the game
 document.addEventListener('keydown', function (e) {
   // console.log(e.code);
-  if (
-    // we're starting the game for the first time
-    (e.code === 'Space' && gameInitialised && !gameStatus) ||
-    // the game has been running, and the balloon crashed so now game over
-    (e.code === 'Space' &&
-      gameInitialised &&
-      gameStatus === 'displayGameOverText')
-  ) {
+  if (e.code === 'Space' && gameInitialised && !gameStatus) {
     gameStatus = 'gameStart';
     // console.log('gameStatusgameStatus--------------- ', gameStatus);
     // console.log('gameInitialised--------------- ', gameInitialised);
