@@ -984,6 +984,19 @@ class CollisionDetection {
     // }
   }
   detectCollisions() {
+    // detect when the balloon goes off the screen by 0.5*width (x-axis) or 0.5*height (y-axix)
+    if (
+      // half of the balloon has gone off the screen to the left
+      balloonObjectArray[0].dX < -0.5 * balloonObjectArray[0].sWidth ||
+      // half the balloon has gone off the screen to the right
+      balloonObjectArray[0].dX + 0.5 * balloonObjectArray[0].sWidth >
+        canvas.width ||
+      // half the balloon has gone off the top off the screen
+      balloonObjectArray[0].dY < -0.5 * balloonObjectArray[0].sHeight
+    ) {
+      this._balloonCrash();
+    }
+
     // collision detection
     for (let a = 0; a < this.balloonCollisionData.length - 1; a++) {
       let A = {
