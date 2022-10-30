@@ -1,9 +1,14 @@
 // import howler sound library
 import './howler/dist/howler.js';
+//import { Howl } from './howler/dist/howler.js';
 
 // get canvas details
 const canvas = document.getElementById('canvas1');
 const ctx = canvas.getContext('2d');
+
+// const youWinCanvas = document.getElementById('youWinCanvas');
+// const youWinCtx = youWinCanvas.getContext('2d');
+
 const collisionCanvas = document.getElementById('collisionCanvas');
 const collisionCtx = collisionCanvas.getContext('2d');
 
@@ -14,6 +19,9 @@ canvas.height = resH;
 
 collisionCanvas.width = resW;
 collisionCanvas.height = resH;
+
+// youWinCanvas.width = resW;
+// youWinCanvas.height = resH;
 
 // state of the game
 // all assets have been preloaded
@@ -38,6 +46,10 @@ let cloudInterval = 7; // every 7 seconds
 let timeAfterExplosionBeforeDisplayingGameOverTimer = 0;
 let timeAfterExplosionBeforeDisplayingGameOver = 2.5;
 
+// displaying the 'You win' object after the fanfare has played
+let timeAfterFanfareTimer = 0;
+let timeAfterFanFare = 0.2;
+
 //initialise collision data variables
 let landscapeObjectArray = [];
 let balloonObjectArray = [];
@@ -58,6 +70,7 @@ let goldenCoinObjectArray = [];
 let mathChallengeObjectArray = [];
 let scoreObjectArray = [];
 let gameOverObjectArray = [];
+let youWinObjectArray = [];
 
 // variables to ensure there isn't a doible placement of
 // elements on the landscape. These variables work alongside the
@@ -276,6 +289,9 @@ const loadSounds = async function () {
 
     let lifeIsBeautiful = await new Howl({
       src: ['/sounds/lifeIsBeautiful.mp3'],
+      onFade: function () {
+        console.log('--------------------fade');
+      },
     });
     soundsArray.push({ name: 'lifeIsBeautifulSound', sound: lifeIsBeautiful });
 
@@ -333,6 +349,13 @@ const loadSounds = async function () {
       src: ['/sounds/halloweenGhost6.mp3'],
     });
     soundsArray.push({ name: 'halloweenGhost6Sound', sound: halloweenGhost6 });
+
+    // this is used as the win fanfare when the player gets to the end
+    // of the landscape
+    let handyIntroduction = await new Howl({
+      src: ['/sounds/handy-introduction-022-glbml-21786.mp3'],
+    });
+    soundsArray.push({ name: 'handyIntroduction', sound: handyIntroduction });
   } catch (err) {
     console.error(err);
   }
@@ -472,6 +495,10 @@ class Balloon {
     this.accelarationX = 0;
 
     this.markedForDeletion = false;
+
+    this.accelarationOffScreen = 0;
+
+    this.fadeSound = false;
   }
 
   balloonAddGas(deltaTimeInSeconds) {
@@ -492,6 +519,25 @@ class Balloon {
       } else {
         this.accelarationX += deltaTimeInSeconds;
       }
+  }
+
+  accelarateRightOffScreen(deltaTimeInSeconds) {
+    // this method will be called when the player has got
+    // to the end of the game, we want the balloon to accelarate
+    // from whatever speed it's going, to off screen to the right
+    this.accelarationOffScreen += 8;
+    this.dX +=
+      this.accelarationX + this.accelarationOffScreen * deltaTimeInSeconds;
+
+    // fade out the theme tune - trigger this only once
+    if (!this.fadeSound) {
+      soundsArray
+        .find(e => e.name === 'lifeIsBeautifulSound')
+        .sound.fade(1, 0, 1500);
+      this.fadeSound = true;
+      // play the 'You win' fanfare!
+      soundsArray.find(e => e.name === 'handyIntroduction').sound.play();
+    }
   }
 
   balloonMovementPhysics() {
@@ -574,6 +620,7 @@ class BalloonExplosion {
         soundsArray
           .find(e => e.name === 'lifeIsBeautifulSound')
           .sound.fade(1, 0, 1000);
+
         // this stops the main game loop
       }
       if (this.frame === this.maxFrame) {
@@ -587,6 +634,11 @@ class BalloonExplosion {
         // we can delete the balloon as it's
         // hidden behind it
         balloonObjectArray[0].markedForDeletion = true;
+        // also delete the cannon ball(s) as it looks odd
+        // if it's still there after the explosion
+        [...cannonBallObjectArray].forEach(
+          element => (element.markedForDeletion = true)
+        );
       }
       this.frame++;
       this.timer = 0;
@@ -955,6 +1007,7 @@ class CollisionDetection {
         const I = this._getIntersection(A, B, C, D);
 
         if (I) {
+          //  collision has happened
           this._balloonCrash();
         }
       }
@@ -982,8 +1035,8 @@ class CollisionDetection {
 
           const I = this._getIntersection(A, B, C, D);
           if (I) {
-            //  collision.play();
-            console.log('💣💣💣💣');
+            //  collision has happened
+            this._balloonCrash();
           }
         }
       }
@@ -1008,6 +1061,7 @@ class CollisionDetection {
 
           const I = this._getIntersection(A, B, C, D);
           if (I) {
+            //  collision has happened
             this._balloonCrash();
           }
         }
@@ -1032,8 +1086,8 @@ class CollisionDetection {
 
             const I = this._getIntersection(A, B, C, D);
             if (I) {
-              // collision.play();
-              console.log('💣💣💣💣');
+              //  collision has happened
+              this._balloonCrash();
             }
           } else {
             // second eye laser
@@ -1048,6 +1102,7 @@ class CollisionDetection {
             };
             const I = this._getIntersection(A, B, C, D);
             if (I) {
+              //  collision has happened
               this._balloonCrash();
             }
           }
@@ -1068,6 +1123,7 @@ class CollisionDetection {
 
           const I = this._getIntersection(A, B, C, D);
           if (I) {
+            //  collision has happened
             this._balloonCrash();
           }
         }
@@ -1101,6 +1157,7 @@ class CollisionDetection {
 
           const I = this._getIntersection(A, B, C, D);
           if (I) {
+            //  collision has happened
             this._balloonCrash();
           }
         }
@@ -1458,7 +1515,6 @@ class GameOver {
     if (this.fontSize === this.maxfontSize) console.log('done');
   }
   draw() {
-    console.log('FONT SIZE=', this.fontSize);
     ctx.fillStyle = 'black';
     ctx.font = `${this.fontSize}px Impact`;
     ctx.textAlign = 'center';
@@ -1468,6 +1524,43 @@ class GameOver {
     ctx.font = `${this.fontSize / 3}px Impact`;
     ctx.textAlign = 'center';
     ctx.fillText(this.subText, canvas.width / 2, 600);
+  }
+}
+
+class YouWin {
+  constructor() {
+    this.text = 'Well done. You made it!!';
+    this.subText = `You scored ${scoreObjectArray[0].score}`;
+
+    this.textGrow = 0;
+    this.textGrowRate = 0.002;
+    this.fontSize = 0;
+
+    this.maxfontSize = 150;
+  }
+
+  update(deltaTimeInSeconds) {
+    //console.log(deltaTimeInSeconds);
+    this.textGrow += deltaTimeInSeconds;
+    if (
+      this.textGrow > this.textGrowRate &&
+      this.fontSize !== this.maxfontSize
+    ) {
+      this.fontSize += 1;
+      this.textGrow = 0;
+    }
+    if (this.fontSize === this.maxfontSize) console.log('done');
+  }
+  draw() {
+    ctx.fillStyle = 'black';
+    ctx.font = `${this.fontSize}px Impact`;
+    ctx.textAlign = 'center';
+    ctx.fillText(this.text, canvas.width / 2, 500);
+
+    ctx.fillStyle = 'black';
+    ctx.font = `${this.fontSize}px Impact`;
+    ctx.textAlign = 'center';
+    ctx.fillText(this.subText, canvas.width / 2, 640);
   }
 }
 
@@ -1619,16 +1712,13 @@ class GoldenCoin {
         console.log('YEAH!');
         // score += 1;
         scoreObjectArray[0].score += 1;
-        //mathChallengeObjectArray[0].score += 1;
 
         this.correctAnswer.play();
         // the answer has been processed
         //  answerBeingProcessed = false;
         // remove the current maths problem
-        //mathChallengeObjectArray = [];
         mathChallengeObjectArray.splice(0, mathChallengeObjectArray.length);
         // remove the coin that is placed in the answer box
-        //goldenCoinObjectArray = [];
         goldenCoinObjectArray.splice(0, goldenCoinObjectArray.length);
       } else {
         console.log('No!');
@@ -2309,7 +2399,7 @@ function animate(timeStamp = 0) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   collisionCtx.clearRect(0, 0, canvas.width, canvas.height);
 
-  console.log('delta time', deltaTimeInSeconds);
+  // console.log('delta time', deltaTimeInSeconds);
 
   switch (gameStatus) {
     case 'gameStart':
@@ -2574,6 +2664,92 @@ function animate(timeStamp = 0) {
         }
       }
 
+      // when the balloon gets across the landscape, trigger the
+      // 'youWin' section of the game because the player has survived
+      // console.log(landscapeOffsetX);
+      //console.log(balloonObjectArray[0].dX);
+      if (landscapeOffsetX > 700) gameStatus = 'youWin';
+      break;
+
+    case 'youWin':
+      // here we want the landscape to stop and the balloon to move to the right
+      // and go off the screen
+      [
+        ...cloudObjectArray,
+        ...windTurbineObjectArray,
+        ...landscapeWaterObjectArray,
+        ...sharkFinObjectArray,
+        ...sharkHeadObjectArray,
+        ...sharkLaserObjectArray,
+        ...landscapeObjectArray,
+        ...cannonObjectArray,
+        ...cannonBallObjectArray,
+        ...iceGhostObjectArray,
+        ...easterIslandObjectArray,
+        ...easterIslandBallObjectArray,
+        ...goldenCoinObjectArray,
+      ].forEach(object => object.update(deltaTimeInSeconds));
+
+      [
+        ...balloonObjectArray,
+        ...cloudObjectArray,
+        ...windTurbineObjectArray,
+        ...landscapeWaterObjectArray,
+        ...sharkFinObjectArray,
+        ...sharkHeadObjectArray,
+        ...sharkLaserObjectArray,
+        ...landscapeObjectArray,
+        ...cannonObjectArray,
+        ...cannonBallObjectArray,
+        ...iceGhostObjectArray,
+        ...easterIslandObjectArray,
+        ...easterIslandBallObjectArray,
+        ...mathChallengeObjectArray,
+        ...scoreObjectArray,
+      ].forEach(object => object.draw(deltaTimeInSeconds));
+
+      balloonObjectArray[0].accelarateRightOffScreen(deltaTimeInSeconds);
+
+      // when the win fanfare has played, fade out the scenary and show
+      // the 'You win' object with the final score
+      timeAfterFanfareTimer += deltaTimeInSeconds;
+      if (timeAfterFanfareTimer > timeAfterFanFare) {
+        // delete the math and score objects
+        [...mathChallengeObjectArray].forEach(
+          object => (object.markedForDeletion = true)
+        );
+        [...scoreObjectArray].forEach(
+          object => (object.markedForDeletion = true)
+        );
+        // mathChallengeObjectArray[0].markedForDeletion = true;
+        // scoreObjectArray[0].markedForDeletion = true;
+
+        if (youWinObjectArray.length === 0) {
+          youWinObjectArray.push(new YouWin());
+        }
+        youWinObjectArray[0].update(deltaTimeInSeconds);
+        youWinObjectArray[0].draw(deltaTimeInSeconds);
+      }
+      // we need to adjust the master game speed of all object incrementally
+      // smaller so that the landscape slows down to a stop
+      [
+        ...cloudObjectArray,
+        ...windTurbineObjectArray,
+        ...landscapeObjectArray,
+        ...landscapeWaterObjectArray,
+        ...sharkFinObjectArray,
+        ...sharkHeadObjectArray,
+        ...sharkLaserObjectArray,
+        ...landscapeObjectArray,
+        ...cannonObjectArray,
+        ...cannonBallObjectArray,
+        ...iceGhostObjectArray,
+        ...easterIslandObjectArray,
+        ...easterIslandBallObjectArray,
+        ...balloonExplosionObjectArray,
+        ...goldenCoinObjectArray,
+      ].forEach(object => (object.speed -= deltaTimeInSeconds * 10));
+
       break;
 
     case 'gameOverExplosion':
@@ -2661,8 +2837,17 @@ function animate(timeStamp = 0) {
       // end and nothing is moving on the screen.
       if (
         gameOverObjectArray[0].fontSize === gameOverObjectArray[0].maxfontSize
-      )
+      ) {
         gameStatus = false;
+        // the game them tune has completed fading at this point, so we now
+        // stop this play and then put the volume back to 'full volume' (1).
+        // If this isn't done, the theme tune won't replay properly whne the
+        // game re-starts
+        soundsArray.find(e => e.name === 'lifeIsBeautifulSound').sound.stop();
+        soundsArray
+          .find(e => e.name === 'lifeIsBeautifulSound')
+          .sound.volume(1);
+      }
 
       break;
   }
@@ -2689,6 +2874,7 @@ function animate(timeStamp = 0) {
     easterIslandBallObjectArray,
     goldenCoinObjectArray,
     mathChallengeObjectArray,
+    scoreObjectArray,
   ].forEach(x => {
     filterObjects(x);
   });
@@ -2779,7 +2965,7 @@ function resetGame() {
 
 //press spaceBar to start the game
 document.addEventListener('keydown', function (e) {
-  console.log(e.code);
+  // console.log(e.code);
   if (
     // we're starting the game for the first time
     (e.code === 'Space' && gameInitialised && !gameStatus) ||
@@ -2794,7 +2980,7 @@ document.addEventListener('keydown', function (e) {
     resetGame();
     animate();
   } else {
-    console.log('Press enter to preload assets');
+    // console.log('Press enter to preload assets');
   }
   if (e.code === 'Space' && gameInitialised && gameStatus === 'gameStart') {
     spaceBarState = true;
