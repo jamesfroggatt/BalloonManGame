@@ -489,10 +489,11 @@ class Balloon {
     this.dWidth = 166;
     this.dHeight = 227;
     this.heatInBalloon = 0;
-    this.rateOfHeatAddition = 5;
+    this.rateOfHeatAddition = 7;
     this.rateOfHeatDischarge = 0;
 
     this.accelarationX = 0;
+    this.accelarationY = 3;
 
     this.markedForDeletion = false;
 
@@ -507,9 +508,11 @@ class Balloon {
   }
 
   moveOnXAxis(deltaTimeInSeconds) {
-    if (arrowRightState === true) this.accelarationX += deltaTimeInSeconds;
+    if (arrowRightState === true)
+      this.accelarationX += deltaTimeInSeconds * this.accelarationY;
 
-    if (arrowLeftState === true) this.accelarationX -= deltaTimeInSeconds;
+    if (arrowLeftState === true)
+      this.accelarationX -= deltaTimeInSeconds * this.accelarationY;
 
     // if left or right keys not pressed, decelarate movement
     // on the x-axis down to zero
@@ -1658,7 +1661,7 @@ class GoldenCoin {
     this.shrinkRate = 0.9;
 
     // target of where we want the coin to move to ( just after the = sign)
-    this.targetX = 320;
+    this.targetX = 340;
     this.targetY = 10;
     this.movingCoinToTarget = 0;
 
@@ -1702,11 +1705,6 @@ class GoldenCoin {
 
     this.dX = Math.round(xy.x);
     this.dY = Math.round(xy.y);
-
-    // remove this collision array from the object as it's not needed any more
-    //this.collisionArray = [{ x: '', y: '' }];
-
-    //answerBeingProcessed = true;
 
     // is the answer correct?
     if (this.timeToProcessMathAnswerCount === 0) {
