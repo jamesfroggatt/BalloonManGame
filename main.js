@@ -525,7 +525,7 @@ class Balloon {
     // this method will be called when the player has got
     // to the end of the game, we want the balloon to accelarate
     // from whatever speed it's going, to off screen to the right
-    this.accelarationOffScreen += 8;
+    this.accelarationOffScreen += 12;
     this.dX +=
       this.accelarationX + this.accelarationOffScreen * deltaTimeInSeconds;
 
@@ -1531,6 +1531,7 @@ class YouWin {
   constructor() {
     this.text = 'Well done. You made it!!';
     this.subText = `You scored ${scoreObjectArray[0].score}`;
+    this.spaceText = `Please press the Space Bar to play again`;
 
     this.textGrow = 0;
     this.textGrowRate = 0.002;
@@ -1558,9 +1559,14 @@ class YouWin {
     ctx.fillText(this.text, canvas.width / 2, 500);
 
     ctx.fillStyle = 'black';
-    ctx.font = `${this.fontSize}px Impact`;
+    ctx.font = `${this.fontSize / 1.5}px Impact`;
     ctx.textAlign = 'center';
-    ctx.fillText(this.subText, canvas.width / 2, 640);
+    ctx.fillText(this.subText, canvas.width / 2, 600);
+
+    ctx.fillStyle = 'black';
+    ctx.font = `${this.fontSize / 2.5}px Impact`;
+    ctx.textAlign = 'center';
+    ctx.fillText(this.spaceText, canvas.width / 2, 670);
   }
 }
 
@@ -2668,7 +2674,8 @@ function animate(timeStamp = 0) {
       // 'youWin' section of the game because the player has survived
       // console.log(landscapeOffsetX);
       //console.log(balloonObjectArray[0].dX);
-      if (landscapeOffsetX > 700) gameStatus = 'youWin';
+      // console.log(landscapeOffsetX);
+      if (landscapeOffsetX > 16700) gameStatus = 'youWin';
       break;
 
     case 'youWin':
@@ -2748,7 +2755,29 @@ function animate(timeStamp = 0) {
         ...easterIslandBallObjectArray,
         ...balloonExplosionObjectArray,
         ...goldenCoinObjectArray,
-      ].forEach(object => (object.speed -= deltaTimeInSeconds * 10));
+      ].forEach(function (object) {
+        // object.speed >= 0 ? (object.speed -= 0.1) : (object.speed = 0);
+        object.speed = 0;
+        console.log(object.speed);
+      });
+
+      // end the game loop if the 'Game Over' text has appeared and it's
+      // at it's maximum text size... this is when the gameloop can effectively
+      // end and nothing is moving on the screen.
+      if (youWinObjectArray.length !== 0) {
+        if (
+          youWinObjectArray[0].fontSize === youWinObjectArray[0].maxfontSize
+        ) {
+          console.log(youWinObjectArray[0].fontSize);
+          gameStatus = false;
+          // we need to stop the theme tune and put the volume back to 1 so that
+          // it plays when the game restarts
+          soundsArray.find(e => e.name === 'lifeIsBeautifulSound').sound.stop();
+          soundsArray
+            .find(e => e.name === 'lifeIsBeautifulSound')
+            .sound.volume(1);
+        }
+      }
 
       break;
 
@@ -2839,7 +2868,7 @@ function animate(timeStamp = 0) {
         gameOverObjectArray[0].fontSize === gameOverObjectArray[0].maxfontSize
       ) {
         gameStatus = false;
-        // the game them tune has completed fading at this point, so we now
+        // the game theme tune has completed fading at this point, so we now
         // stop this play and then put the volume back to 'full volume' (1).
         // If this isn't done, the theme tune won't replay properly whne the
         // game re-starts
@@ -2875,6 +2904,7 @@ function animate(timeStamp = 0) {
     goldenCoinObjectArray,
     mathChallengeObjectArray,
     scoreObjectArray,
+    youWinObjectArray,
   ].forEach(x => {
     filterObjects(x);
   });
@@ -2940,6 +2970,7 @@ function resetGame() {
     mathChallengeObjectArray,
     scoreObjectArray,
     gameOverObjectArray,
+    youWinObjectArray,
     //].forEach(element => (element = []));
   ].forEach(element => element.splice(0, element.length));
 
@@ -2961,6 +2992,9 @@ function resetGame() {
   timeToNextCloud = 0;
   canvas.width = 1920;
   canvas.height = 1080;
+  // stop the 'you win' fanfare. This will stop it playing if the
+  // user presses the space bar (to start a new game) before it's finished playing
+  soundsArray.find(e => e.name === 'handyIntroduction').sound.stop();
 }
 
 //press spaceBar to start the game
