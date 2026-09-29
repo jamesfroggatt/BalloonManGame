@@ -1,6 +1,13 @@
 // import howler sound library
 import './howler/dist/howler.js';
 //import { Howl } from './howler/dist/howler.js';
+// the new "Toybox" artwork
+import * as world from './art/world.js';
+import * as actors from './art/actors.js';
+import * as hud from './art/hud.js';
+import * as screens from './art/screens.js';
+import { initLevel, level } from './art/level.js';
+import { style } from './art/style.js';
 
 // get canvas details
 const canvas = document.getElementById('canvas1');
@@ -36,9 +43,6 @@ let spaceBarState = false,
   arrowRightState = false;
 
 // game loop variables
-let oldTimeStamp = 0,
-  deltaTimeInSeconds,
-  accumulativeDeltaTimeInSeconds;
 let timeToNextCloud = 0;
 let cloudInterval = 7; // every 7 seconds
 
@@ -84,8 +88,6 @@ let easterIslandPlacement = { x: 0 };
 
 ////////////////////////////////////////////////
 // array to hole the preloaded assets //////////
-// hold the array of images (including sprites)
-let preLoadedImageArray = [];
 // hold the collision data polygon data
 let collisionDataArray = [];
 // hold the sounds
@@ -93,82 +95,33 @@ let soundsArray = [];
 // save the sprite sheet arrays
 let spriteSheetArrays = [];
 
-////////////////////////////////////////////////
-// array of image files to preload /////////////
-const imageFiles = [
-  '/images/cloud1.png',
-  '/images/cloud2.png',
-  '/images/cloud3.png',
-  '/images/cloud4.png',
-  '/images/cloud5.png',
-  '/images/cloud6.png',
-  '/images/cloud7.png',
-  '/images/cloud8.png',
-  '/images/cloud9.png',
-  '/images/cloud10.png',
-  '/images/cloud11.png',
-  '/images/cloud12.png',
-  '/images/cloud13.png',
-  '/images/cloud14.png',
-  '/images/cloud15.png',
-  '/images/cloud16.png',
-  '/images/cloud17.png',
-  '/images/cloud18.png',
-  '/images/cloud19.png',
-  '/images/cloud20.png',
-  '/images/windTurbineSpriteSheet.png',
-  '/images/land.png',
-  '/images/balloon.png',
-  '/images/cannonSpriteSheetLeft.png',
-  '/images/cannonSpriteSheetRight.png',
-  '/images/sharkFinSpriteSheetLeft.png',
-  '/images/sharkFinSpriteSheetRight.png',
-  '/images/landWater.png',
-  '/images/sharkHeadSpriteSheet.png',
-  '/images/iceGhostSpriteSheet.png',
-  '/images/easterIslandSpriteSheet.png',
-  '/images/easterIslandBall.png',
-  '/images/1Coin.png',
-  '/images/2Coin.png',
-  '/images/3Coin.png',
-  '/images/4Coin.png',
-  '/images/5Coin.png',
-  '/images/6Coin.png',
-  '/images/7Coin.png',
-  '/images/8Coin.png',
-  '/images/9Coin.png',
-  '/images/10Coin.png',
-  '/images/balloonExplosion.png',
+// the sizes of the old cloud pictures (cloud1.png to cloud20.png): each cloud
+// is still sized, and scrolls away, exactly as before (world.js paints it)
+const CLOUD_SIZES = [
+  [637, 235],
+  [535, 191],
+  [1131, 310],
+  [1123, 271],
+  [646, 204],
+  [668, 238],
+  [665, 250],
+  [511, 232],
+  [750, 262],
+  [681, 220],
+  [703, 266],
+  [640, 225],
+  [636, 230],
+  [643, 240],
+  [596, 199],
+  [629, 234],
+  [796, 186],
+  [862, 218],
+  [690, 222],
+  [705, 261],
 ];
 
-function loadImage(src) {
-  return new Promise(function (resolve) {
-    let image = new Image();
-    image.onload = function () {
-      resolve(image);
-    };
-    image.src = src;
-  });
-}
-
-const loadAll = async function () {
-  try {
-    for (let i = 0; i < imageFiles.length; i++) {
-      const myImage = await loadImage(imageFiles[i]);
-      // console.log(`${imgArr[i]} loading into array..`);
-      // save the preloaded image and the image name in an array
-      preLoadedImageArray.push({
-        src: imageFiles[i],
-        image: myImage,
-        imageName: imageFiles[i].slice(8),
-      });
-    }
-
-    // return;
-  } catch (err) {
-    console.error(err);
-  }
-};
+// how many sounds have loaded (for the loading bar)
+let loadedCount = 0;
 
 ///////////////////////////////////////////////
 ///////////////////////////////////////////////
@@ -356,10 +309,31 @@ const loadSounds = async function () {
       src: ['/sounds/handy-introduction-022-glbml-21786.mp3'],
     });
     soundsArray.push({ name: 'handyIntroduction', sound: handyIntroduction });
+
+    // wait until every sound has actually been fetched and decoded
+    await Promise.all(soundsArray.map(e => whenSoundLoaded(e.sound || e)));
   } catch (err) {
     console.error(err);
   }
 };
+
+// resolves once Howler has loaded a sound (or given up on it), so the game
+// never starts with sounds still missing
+function whenSoundLoaded(howl) {
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      loadedCount++;
+      resolve(howl);
+    };
+    if (howl.state() === 'loaded') return finish();
+    howl.once('load', finish);
+    howl.once('loaderror', finish);
+    setTimeout(finish, 10000);
+  });
+}
 
 //////////////////////////////////////////////////////
 //// create sprite sheet arrays //////////////////////
@@ -460,13 +434,55 @@ function createSpriteSheetArrays() {
   });
 }
 
+// what the ground is made of (lakes, grass, snow, sand, rocks, palms), made
+// from the old landscape picture by tools/build_level_data.py
+let levelData = null;
+const loadLevelData = async function () {
+  try {
+    const res = await fetch('./art/levelData.json');
+    levelData = await res.json();
+  } catch (err) {
+    console.error(err);
+  }
+};
+
 ///////////////////
-// will be part of init soon
-loadAll();
-loadCollisionData();
-loadSounds();
+// load everything first: pressing Space before this finished used to crash
 createSpriteSheetArrays();
-gameInitialised = true;
+// the fonts must be ready before any lettering is baked into pictures
+const loadFonts = () =>
+  Promise.all(
+    ['60px "Lilita One"', '600 30px Fredoka', '400 30px Fredoka'].map(f =>
+      document.fonts.load(f).catch(() => {})
+    )
+  ).then(() => {
+    fontsReady = true;
+  });
+
+Promise.all([
+  loadCollisionData(),
+  loadSounds(),
+  loadLevelData(),
+  loadFonts(),
+]).then(() => {
+  // the ground is drawn from the same crash line the game tests against
+  try {
+    initLevel(landscapeCollisionData, levelData);
+  } catch (err) {
+    // without it the game is played over a plain sky
+    console.error(err);
+  }
+  // paint the characters and the palms' hanging fronds now rather than
+  // mid-flight (if that fails they are painted when first needed: the game
+  // must still start)
+  try {
+    actors.warmUp([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    if (level.ready) world.warmUp();
+  } catch (err) {
+    console.error(err);
+  }
+  gameInitialised = true;
+});
 ///////////////////
 
 /////////////////////////////////////////////////////
@@ -475,11 +491,6 @@ gameInitialised = true;
 //////////// GAME OBJECTS ///////////////////////////
 class Balloon {
   constructor() {
-    // landscape image
-    this.image = preLoadedImageArray.find(
-      obj => obj.imageName === 'balloon.png'
-    ).image;
-
     this.sX = 0;
     this.sY = 0;
     this.sWidth = 166;
@@ -489,7 +500,7 @@ class Balloon {
     this.dWidth = 166;
     this.dHeight = 227;
     this.heatInBalloon = 0;
-    this.rateOfHeatAddition = 7;
+    this.rateOfHeatAddition = diff.heatAdd;
     this.rateOfHeatDischarge = 0;
 
     this.accelarationX = 0;
@@ -548,9 +559,9 @@ class Balloon {
     // heat dissipating from the balloon
     this.heatInBalloon -= this.rateOfHeatDischarge;
     if (this.heatInBalloon < 0) {
-      this.rateOfHeatDischarge = 0.02;
+      this.rateOfHeatDischarge = diff.dischargeLow;
     } else {
-      this.rateOfHeatDischarge = 0.04;
+      this.rateOfHeatDischarge = diff.dischargeHigh;
     }
 
     this.dY -= this.heatInBalloon;
@@ -558,17 +569,7 @@ class Balloon {
   }
 
   draw() {
-    ctx.drawImage(
-      this.image,
-      this.sX, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sY, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place tihe image
-      this.dY, // y coord in destination canvas in which to place tihe image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
+    actors.drawBalloon(ctx, this);
   }
 }
 
@@ -581,14 +582,9 @@ class BalloonExplosion {
       e => e.name === 'explosionSound'
     ).sound;
 
-    this.image = preLoadedImageArray.find(
-      obj => obj.imageName === 'balloonExplosion.png'
-    ).image;
-
     this.balloonExplosionSpriteSheetXYArray = spriteSheetArrays.find(
       obj => obj.name === 'balloonExplosionSpriteSheetXYArray'
     ).array;
-    //this.image = preLoadedImageArray[42].image;
     this.frame = 0;
     this.maxFrame = 62;
 
@@ -616,7 +612,7 @@ class BalloonExplosion {
 
       if (this.frame === 0) {
         // play explosion sound
-        this.explosionSound.play();
+        playAt(this.explosionSound, this.dX + 385);
         // fade out the background music
 
         //  landscapeObjectArray[0].lifeIsBeautifulSound.fade(1, 0, 1000);
@@ -651,17 +647,7 @@ class BalloonExplosion {
   }
 
   draw() {
-    ctx.drawImage(
-      this.image,
-      this.balloonExplosionSpriteSheetXYArray[this.frame].x, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.balloonExplosionSpriteSheetXYArray[this.frame].y, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place the image
-      this.dY, // y coord in destination canvas in which to place the image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
+    actors.drawExplosion(ctx, this, balloonObjectArray[0]);
   }
 }
 
@@ -675,15 +661,6 @@ class Cannon {
 
     if (leftRightFace === 'left') {
       this.facing = 'left';
-      this.image = preLoadedImageArray.find(
-        obj => obj.imageName === 'cannonSpriteSheetLeft.png'
-      ).image;
-      //this.image = preLoadedImageArray[23].image; // left size facing cannon sprite sheet
-    } else {
-      this.image = preLoadedImageArray.find(
-        obj => obj.imageName === 'cannonSpriteSheetRight.png'
-      ).image;
-      //this.image = preLoadedImageArray[24].image; // right size facing cannon sprite sheet
     }
 
     // get the cannon sprite sheet array
@@ -706,9 +683,8 @@ class Cannon {
     this.dWidth = this.sWidth;
     this.dHeight = this.sHeight;
 
-    this.dX = canvas.width;
-    this.dY =
-      canvas.height - this.dHeight - Math.round(getRandomArbitrary(20, 100));
+    this.dX = resW;
+    this.dY = resH - this.dHeight - Math.round(getRandomArbitrary(20, 100));
 
     // horizontal movement of the cannon
     this.speed = masterGameSpeed;
@@ -718,7 +694,8 @@ class Cannon {
 
     // firing the cannon animation
     this.firingTheCannon = false;
-    this.cannonShotTiming = Math.round(getRandomArbitrary(1, 5));
+    this.cannonShotTiming =
+      Math.round(getRandomArbitrary(1, 5)) * diff.cannonWait;
     this.timeBetweenLastCannonShot = 0;
 
     this.cannonAnimationSpeed = 0.2;
@@ -742,7 +719,7 @@ class Cannon {
       if (this.timeBetweenLastCannonShot > this.cannonAnimationSpeed) {
         // play the fuse sound effect
         if (this.frame === 0) {
-          this.fuseSound.play();
+          playAt(this.fuseSound, this.dX + 85);
         }
 
         if (this.frame > this.maxFrame) {
@@ -758,7 +735,7 @@ class Cannon {
             cannonBallObjectArray.push(
               new CannonBall(this.dX, this.dY, this.facing)
             );
-            this.cannonBallSound.play();
+            playAt(this.cannonBallSound, this.dX + 85);
           }
         }
       }
@@ -775,17 +752,7 @@ class Cannon {
   }
 
   draw() {
-    ctx.drawImage(
-      this.image,
-      this.cannonSpriteXYArray[this.frame].x, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.cannonSpriteXYArray[this.frame].y, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place the image
-      this.dY, // y coord in destination canvas in which to place the image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
+    actors.drawCannon(ctx, this);
   }
 }
 
@@ -813,10 +780,7 @@ class CannonBall {
   }
 
   draw() {
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, 10, 0, 2 * Math.PI);
-    ctx.fillStyle = 'Black';
-    ctx.fill();
+    actors.drawCannonBall(ctx, this);
   }
 
   update(deltaTimeInSeconds) {
@@ -840,26 +804,21 @@ class CannonBall {
 
     // if the ball has gone off the screen bottom delete it from the
     // cannon ball objects array
-    if (this.y > canvas.height || this.x < 0 || this.x > canvas.width)
+    if (this.y > resH || this.x < 0 || this.x > resW)
       this.markedForDeletion = true;
   }
 }
 
 class Cloud {
   constructor() {
-    //this.image = new Image();
-
+    // which of the old cloud pictures this one takes its size from
     this.random = Math.round(getRandomArbitrary(1, 20));
-    this.image = preLoadedImageArray.find(
-      obj => obj.imageName === `cloud${this.random}.png`
-    ).image;
 
     this.sX = 0;
     this.sY = 0;
     //this.randomCloudSideValue = +Math.round(Math.random() * 200 + 1);
-    this.sWidth = this.image.width;
-    this.sHeight = this.image.height;
-    this.dX = canvas.width;
+    [this.sWidth, this.sHeight] = CLOUD_SIZES[this.random - 1];
+    this.dX = resW;
     this.dY = Math.round(getRandomArbitrary(0, 150));
 
     this.randomCloudScaling = getRandomArbitrary(0.8, 1);
@@ -886,17 +845,7 @@ class Cloud {
     if (this.dX < 0 - this.sWidth) this.markedForDeletion = true;
   }
   draw() {
-    ctx.drawImage(
-      this.image,
-      this.sX, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sY, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place tihe image
-      this.dY, // y coord in destination canvas in which to place tihe image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
+    world.drawGameCloud(ctx, this);
   }
 }
 
@@ -976,6 +925,8 @@ class CollisionDetection {
   }
 
   _balloonCrash() {
+    // (the automated tests can fly the whole level without crashing)
+    if (debugInvincible) return;
     // if (balloonExplosionObjectArray.length === 0) {
     // this tells the switch control within the
     // game loop to go into the game over sequence
@@ -989,8 +940,7 @@ class CollisionDetection {
       // half of the balloon has gone off the screen to the left
       balloonObjectArray[0].dX < -0.5 * balloonObjectArray[0].sWidth ||
       // half the balloon has gone off the screen to the right
-      balloonObjectArray[0].dX + 0.5 * balloonObjectArray[0].sWidth >
-        canvas.width ||
+      balloonObjectArray[0].dX + 0.5 * balloonObjectArray[0].sWidth > resW ||
       // half the balloon has gone off the top off the screen
       balloonObjectArray[0].dY < -0.5 * balloonObjectArray[0].sHeight
     ) {
@@ -1360,11 +1310,6 @@ class CollisionDetection {
 
 class EasterIsland {
   constructor() {
-    // this.easterIslandImage = preLoadedImageArray[30].image;
-    this.image = preLoadedImageArray.find(
-      obj => obj.imageName === 'easterIslandSpriteSheet.png'
-    ).image;
-
     this.frame = 1;
 
     this.easterIslandSpriteXYArray = spriteSheetArrays.find(
@@ -1378,9 +1323,9 @@ class EasterIsland {
 
     this.dWidth = this.sWidth / 1.4;
     this.dHeight = this.sHeight / 1.4;
-    this.dX = canvas.width;
+    this.dX = resW;
     // randomise y position of iceGhosts
-    this.dY = canvas.height - 50 - this.dHeight;
+    this.dY = resH - 50 - this.dHeight;
 
     this.delayToMouthOpenTimer = 0;
     this.delayUntilMouthOpen = 3; // seceonds
@@ -1430,17 +1375,7 @@ class EasterIsland {
   }
 
   draw() {
-    ctx.drawImage(
-      this.image,
-      this.easterIslandSpriteXYArray[this.frame].x, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.easterIslandSpriteXYArray[this.frame].y, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place the image
-      this.dY, // y coord in destination canvas in which to place the image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
+    actors.drawMoai(ctx, this);
   }
 }
 
@@ -1448,13 +1383,10 @@ class EasterIslandBall {
   constructor(x, y) {
     // play one of the 6 sound files for this iceGhost
     this.soundNumber = Math.round(getRandomArbitrary(1, 5));
-    this.easterIslandBallSound = soundsArray
-      .find(e => e.name === `pop${this.soundNumber}Sound`)
-      .sound.play();
-
-    this.image = preLoadedImageArray.find(
-      obj => obj.imageName === 'easterIslandBall.png'
-    ).image;
+    this.easterIslandBallSound = playAt(
+      soundsArray.find(e => e.name === `pop${this.soundNumber}Sound`).sound,
+      x
+    );
 
     this.sX = 0;
     this.sY = 0;
@@ -1489,20 +1421,7 @@ class EasterIslandBall {
     if (this.dX < 0 - this.sWidth || this.dY < 0) this.markedForDeletion = true;
   }
   draw(deltaTimeInSeconds) {
-    ctx.save();
-    ctx.globalAlpha = (this.startingBallAlpha * deltaTimeInSeconds) / 1.5;
-    ctx.drawImage(
-      this.image,
-      this.sX, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sY, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place the image
-      this.dY, // y coord in destination canvas in which to place the image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
-    ctx.restore();
+    actors.drawRing(ctx, this, deltaTimeInSeconds);
   }
 }
 
@@ -1528,19 +1447,9 @@ class GameOver {
       this.fontSize += 5;
       this.textGrow = 0;
     }
-    if (this.fontSize === this.maxfontSize) console.log('done');
   }
-  draw() {
-    ctx.fillStyle = 'black';
-    ctx.font = `${this.fontSize}px Impact`;
-    ctx.textAlign = 'center';
-    ctx.fillText(this.text, canvas.width / 2, 500);
-
-    ctx.fillStyle = 'black';
-    ctx.font = `${this.fontSize / 3}px Impact`;
-    ctx.textAlign = 'center';
-    ctx.fillText(this.subText, canvas.width / 2, 600);
-  }
+  // (the end of the flight is drawn by art/screens.js)
+  draw() {}
 }
 
 class YouWin {
@@ -1566,34 +1475,15 @@ class YouWin {
       this.fontSize += 1;
       this.textGrow = 0;
     }
-    if (this.fontSize === this.maxfontSize) console.log('done');
   }
-  draw() {
-    ctx.fillStyle = 'black';
-    ctx.font = `${this.fontSize}px Impact`;
-    ctx.textAlign = 'center';
-    ctx.fillText(this.text, canvas.width / 2, 500);
-
-    ctx.fillStyle = 'black';
-    ctx.font = `${this.fontSize / 1.5}px Impact`;
-    ctx.textAlign = 'center';
-    ctx.fillText(this.subText, canvas.width / 2, 600);
-
-    ctx.fillStyle = 'black';
-    ctx.font = `${this.fontSize / 2.5}px Impact`;
-    ctx.textAlign = 'center';
-    ctx.fillText(this.spaceText, canvas.width / 2, 670);
-  }
+  // (the end of the flight is drawn by art/screens.js)
+  draw() {}
 }
 
 class GoldenCoin {
   constructor(randomNumber) {
-    // get random coin image
+    // the number on the coin (coins are drawn by art/actors.js)
     this.randomNumber = randomNumber; //Math.round(getRandomArbitrary(1, 10));
-
-    this.image = preLoadedImageArray.find(
-      obj => obj.imageName === `${this.randomNumber}Coin.png`
-    ).image;
 
     this.goldenCoinSpriteXYArray = spriteSheetArrays.find(
       obj => obj.name === 'goldenCoinSpriteXYArray'
@@ -1623,7 +1513,7 @@ class GoldenCoin {
     // console.log('-------------', coinObjectCount);
     let foundValue = false;
     while (!foundValue) {
-      let randomXValue = Math.round(getRandomArbitrary(150, canvas.width));
+      let randomXValue = Math.round(getRandomArbitrary(150, resW));
       // console.log('randomXValue=', randomXValue);
       let foundAnswer = goldenCoinObjectArray.find(
         e =>
@@ -1639,7 +1529,7 @@ class GoldenCoin {
     }
     // let randomXValue = getRandomArbitrary(
     //   balloonObjectArray[0].dX + balloonObjectArray[0].sWidth * 2,
-    //   canvas.width
+    //   resW
     // );
     // this.dX = randomXValue;
     // random position on the Y axis between 0 and 700
@@ -1673,9 +1563,9 @@ class GoldenCoin {
     // how fast do the other coind shrink when one coin has been hit by the balloon
     this.shrinkRate = 0.9;
 
-    // target of where we want the coin to move to ( just after the = sign)
-    this.targetX = 335;
-    this.targetY = 10;
+    // target of where we want the coin to move to (the answer slot)
+    this.targetX = hud.SLOT_CENTRE[0] - 59;
+    this.targetY = hud.SLOT_CENTRE[1] - 60;
     this.movingCoinToTarget = 0;
 
     // time to process the maths problem
@@ -1721,7 +1611,7 @@ class GoldenCoin {
 
     // is the answer correct?
     if (this.timeToProcessMathAnswerCount === 0) {
-      this.collectCoinSound.play();
+      playAt(this.collectCoinSound, this.dX + 59);
     }
     this.timeToProcessMathAnswerCount += deltaTimeInSeconds;
     if (this.timeToProcessMathAnswerCount > this.timeToProcessMathAnswer) {
@@ -1729,6 +1619,7 @@ class GoldenCoin {
         console.log('YEAH!');
         // score += 1;
         scoreObjectArray[0].score += 1;
+        answerGiven(true, this.randomNumber);
 
         this.correctAnswer.play();
         // the answer has been processed
@@ -1740,6 +1631,7 @@ class GoldenCoin {
       } else {
         console.log('No!');
         // score -= 1;
+        answerGiven(false, this.randomNumber);
         this.wrongAnswer.play();
         // the answer has been processed
         // answerBeingProcessed = false;
@@ -1754,20 +1646,7 @@ class GoldenCoin {
   }
 
   draw() {
-    // if (this.markedForDeletion) return;
-    ctx.drawImage(
-      this.image,
-      this.goldenCoinSpriteXYArray[this.frame].x, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.goldenCoinSpriteXYArray[this.frame].y, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      //this.sX, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      //this.sY, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place tihe image
-      this.dY, // y coord in destination canvas in which to place tihe image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
+    actors.drawCoin(ctx, this);
   }
 
   fadeOut(deltaTimeInSeconds) {
@@ -1788,11 +1667,6 @@ class GoldenCoin {
 
 class IceGhost {
   constructor() {
-    this.image = preLoadedImageArray.find(
-      obj => obj.imageName === 'iceGhostSpriteSheet.png'
-    ).image;
-
-    //this.iceGhostImage = preLoadedImageArray[29].image;
     this.frame = 0;
     this.maxFrame = 10;
 
@@ -1802,9 +1676,11 @@ class IceGhost {
 
     // play one of the 6 sound files for this iceGhost
     this.soundNumber = Math.round(getRandomArbitrary(1, 6));
-    this.iceGhostSound = soundsArray
-      .find(e => e.name === `halloweenGhost${this.soundNumber}Sound`)
-      .sound.play();
+    this.iceGhostSound = playAt(
+      soundsArray.find(e => e.name === `halloweenGhost${this.soundNumber}Sound`)
+        .sound,
+      resW
+    );
 
     // this.soundNumber = Math.round(getRandomArbitrary(0, 5));
 
@@ -1812,7 +1688,7 @@ class IceGhost {
     this.sY = 0;
     this.sWidth = 399; //398.5
     this.sHeight = 586; //585.6
-    this.dX = canvas.width;
+    this.dX = resW;
     // randomise y position of iceGhosts
     this.dY = Math.round(getRandomArbitrary(50, 600));
     this.dWidth = this.sWidth / 3;
@@ -1845,18 +1721,7 @@ class IceGhost {
     if (this.dX < 0 - this.sWidth) this.markedForDeletion = true;
   }
   draw() {
-    // console.log(this.frame, this.frame);
-    ctx.drawImage(
-      this.image,
-      this.iceGhostSpriteXYArray[this.frame].x, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.iceGhostSpriteXYArray[this.frame].y, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place the image
-      this.dY, // y coord in destination canvas in which to place the image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
+    actors.drawGhost(ctx, this);
   }
 }
 
@@ -1866,23 +1731,16 @@ class Landscape {
       .find(e => e.name === 'lifeIsBeautifulSound')
       .sound.play();
 
-    // landscape image
-    // let image = new Image();
-    // image.src = '/images/land.png';
-    // this.image = image;
-
-    this.image = preLoadedImageArray.find(
-      obj => obj.imageName === 'land.png'
-    ).image;
-
+    // (the landscape is drawn by art/world.js from the crash line; sX is how
+    // far it has scrolled)
     this.sX = 0;
     this.sY = 0;
     this.sWidth = 1920; //1920
     this.sHeight = 490; // 816
 
     this.dX = this.sX;
-    this.dY = canvas.height - this.sHeight;
-    this.dWidth = canvas.width; //canvas.width
+    this.dY = resH - this.sHeight;
+    this.dWidth = resW; //resW
     this.dHeight = 490; // 816
 
     // landscape animation
@@ -1893,37 +1751,18 @@ class Landscape {
     // we want the landscape to run at
     this.sX += this.speed * deltaTimeInSeconds;
   }
-
-  draw() {
-    ctx.drawImage(
-      this.image,
-      this.sX, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sY, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place the image
-      this.dY, // y coord in destination canvas in which to place the image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
-  }
 }
 
 class LandscapeWater {
   constructor() {
-    // this.image = preLoadedImageArray[27].image;
-    // landscape image
-    this.image = preLoadedImageArray.find(
-      obj => obj.imageName === 'landWater.png'
-    ).image;
-
+    // (the lakes are drawn by art/world.js)
     this.sX = 0;
     this.sY = 0;
     this.sWidth = 1932;
     this.sHeight = 178;
     this.dX = 0;
-    this.dY = canvas.height - 178;
-    this.dWidth = canvas.width;
+    this.dY = resH - 178;
+    this.dWidth = resW;
     this.dHeight = 178;
 
     this.speed = masterGameSpeed;
@@ -1932,27 +1771,29 @@ class LandscapeWater {
   update(deltaTimeInSeconds) {
     this.sX += this.speed * deltaTimeInSeconds;
   }
-
-  draw() {
-    ctx.drawImage(
-      this.image,
-      this.sX, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sY, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place the image
-      this.dY, // y coord in destination canvas in which to place the image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
-  }
 }
 
 class MathChallenge {
   constructor(gameAnswer = '__') {
-    this.aValue = Math.round(getRandomArbitrary(1, 9)); // value 1 to 8
-    this.bValue = Math.round(getRandomArbitrary(1, 10 - this.aValue));
-    this.mathAnswer = this.aValue + this.bValue;
+    if (settings.sums === 'sub') {
+      // taking away within 10 (the answer can be 0)
+      this.aValue = Math.round(getRandomArbitrary(2, 10));
+      this.bValue = Math.round(getRandomArbitrary(1, this.aValue));
+      this.mathAnswer = this.aValue - this.bValue;
+      this.op = '\u2212';
+    } else if (settings.sums === 'times') {
+      // the 2 to 10 times tables
+      this.aValue = Math.round(getRandomArbitrary(2, 10));
+      this.bValue = Math.round(getRandomArbitrary(1, 10));
+      this.mathAnswer = this.aValue * this.bValue;
+      this.op = '\u00d7';
+    } else {
+      // adding: exactly the random numbers the game always used
+      this.aValue = Math.round(getRandomArbitrary(1, 9)); // value 1 to 8
+      this.bValue = Math.round(getRandomArbitrary(1, 10 - this.aValue));
+      this.mathAnswer = this.aValue + this.bValue;
+      this.op = '+';
+    }
     this.gameAnswer = gameAnswer;
 
     this.mathProblemScroll = -500;
@@ -1960,26 +1801,14 @@ class MathChallenge {
     this.markedForDeletion = false;
   }
 
-  draw(deltaTimeInSeconds) {
+  // slide the sum in from the left (was done inside draw)
+  update(deltaTimeInSeconds) {
     if (this.mathProblemScroll < 50)
       this.mathProblemScroll += deltaTimeInSeconds * 700;
-
-    // Math Challenge
-    ctx.fillStyle = 'black';
-    ctx.font = '100px Impact';
-    ctx.fillText(
-      `${this.aValue} + ${this.bValue} = ${this.gameAnswer}`,
-      Math.floor(this.mathProblemScroll),
-      120
-    );
-    ctx.fillStyle = 'white';
-    ctx.font = '100px Impact';
-    ctx.fillText(
-      `${this.aValue} + ${this.bValue} = ${this.gameAnswer}`,
-      Math.floor(this.mathProblemScroll) + 5,
-      125
-    );
   }
+
+  // (the sum is drawn by the HUD, see art/hud.js)
+  draw() {}
 }
 
 class Score {
@@ -1987,29 +1816,16 @@ class Score {
     this.score = 0;
   }
 
-  draw() {
-    // Score Challenge
-    ctx.fillStyle = 'black';
-    ctx.fillText(`Score = ${this.score}`, 1450, 120); //1450
-    ctx.fillStyle = 'white';
-    ctx.fillText(`Score = ${this.score}`, 1450, 125);
-  }
+  // (the score is drawn by the HUD, see art/hud.js)
+  draw() {}
 }
 
 class SharkFin {
   constructor(leftRightFace) {
     if (leftRightFace === 'left') {
       this.facing = 'left';
-      this.image = preLoadedImageArray.find(
-        obj => obj.imageName === 'sharkFinSpriteSheetLeft.png'
-      ).image;
-      //  this.sharkFinImage = preLoadedImageArray[25].image;
     } else {
       this.facing = 'right';
-      this.image = preLoadedImageArray.find(
-        obj => obj.imageName === 'sharkFinSpriteSheetRight.png'
-      ).image;
-      // this.sharkFinImage = preLoadedImageArray[26].image;
     }
 
     // get the cannon sprite sheet array
@@ -2028,7 +1844,7 @@ class SharkFin {
     this.sHeight = 60;
     this.dWidth = this.sWidth;
     this.dHeight = this.sHeight;
-    this.dX = canvas.width;
+    this.dX = resW;
 
     this.upDownRepeat = 0;
     // note, the water depth needs to be 218 pixels on the landscape
@@ -2036,7 +1852,7 @@ class SharkFin {
     // ... 218 is on the top of the water
 
     this.dY =
-      canvas.height -
+      resH -
       Math.round(getRandomArbitrary(100, 178)) - // 100 178
       this.sHeight +
       4; //120 280
@@ -2104,26 +1920,12 @@ class SharkFin {
       this.markedForDeletion = true;
   }
   draw() {
-    ctx.drawImage(
-      this.image,
-      this.sharkFinSpriteXYArray[this.frame].x, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sharkFinSpriteXYArray[this.frame].y, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place the image
-      this.dY, // y coord in destination canvas in which to place the image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
+    actors.drawSharkFin(ctx, this);
   }
 }
 
 class SharkHead {
   constructor() {
-    this.image = preLoadedImageArray.find(
-      obj => obj.imageName === 'sharkHeadSpriteSheet.png'
-    ).image;
-
     this.sharkHeadSpriteXYArray = spriteSheetArrays.find(
       obj => obj.name === 'sharkHeadSpriteXYArray'
     ).array;
@@ -2137,8 +1939,8 @@ class SharkHead {
     this.sWidth = 206;
     this.sHeight = 120;
 
-    this.dX = canvas.width;
-    this.dY = canvas.height - this.sHeight - 176;
+    this.dX = resW;
+    this.dY = resH - this.sHeight - 176;
     this.dWidth = this.sWidth;
     this.dHeight = this.sHeight;
 
@@ -2209,7 +2011,7 @@ class SharkHead {
       this.timeSinceLastHeadInterval = 0;
 
       if (this.frame === 0) this.markedForDeletion = true;
-      //  this.sharkHead_dX = canvas.width - 500;
+      //  this.sharkHead_dX = resW - 500;
     }
 
     // update on the y axis
@@ -2217,18 +2019,7 @@ class SharkHead {
   }
 
   draw() {
-    // console.log(this.frame, this.frame);
-    ctx.drawImage(
-      this.image,
-      this.sharkHeadSpriteXYArray[this.frame].x, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sharkHeadSpriteXYArray[this.frame].y, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place the image
-      this.dY, // y coord in destination canvas in which to place the image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
+    actors.drawSharkHead(ctx, this, sharkLaserObjectArray);
   }
 }
 
@@ -2236,18 +2027,19 @@ class SharkHeadLaserEyes {
   constructor(x1, y1, x2, y2, laserTiming) {
     //this.laserSound = laserSound.play();
 
-    this.laserSound = soundsArray
-      .find(e => e.name === 'laserSound')
-      .sound.play();
+    this.laserSound = playAt(
+      soundsArray.find(e => e.name === 'laserSound').sound,
+      x1
+    );
 
     this.laser1BeginX = x1;
     this.laser1BeginY = y1;
-    this.laser1EndX = x1; //canvas.width / Math.round(getRandomArbitrary(2, 3));
+    this.laser1EndX = x1; //resW / Math.round(getRandomArbitrary(2, 3));
     this.laser1EndY = 0;
 
     this.laser2BeginX = x2;
     this.laser2BeginY = y2;
-    this.laser2EndX = x2; //canvas.width / Math.round(getRandomArbitrary(2, 3));
+    this.laser2EndX = x2; //resW / Math.round(getRandomArbitrary(2, 3));
     this.laser2EndY = 0;
 
     this.timeSinceLastLaserMovement = 0;
@@ -2266,29 +2058,7 @@ class SharkHeadLaserEyes {
   }
 
   draw() {
-    ctx.save();
-    ctx.beginPath();
-    ctx.shadowBlur = Math.round(getRandomArbitrary(0, 30)); // integer
-
-    ctx.moveTo(this.laser1BeginX, this.laser1BeginY);
-    ctx.lineTo(this.laser1EndX, this.laser1EndY);
-
-    //ctx.stroke();
-
-    ctx.moveTo(this.laser2BeginX, this.laser2BeginY);
-    ctx.lineTo(this.laser2EndX, this.laser2EndY);
-    ctx.strokeStyle = 'red';
-    ctx.lineWidth = 3;
-
-    ctx.shadowColor = 'red'; // string
-    // //Color of the shadow;  RGB, RGBA, HSL, HEX, and other inputs are valid.
-    ctx.shadowOffsetX = 0; // integer
-    // //Horizontal distance of the shadow, in relation to the text.
-    ctx.shadowOffsetY = 0; // integer
-    // //Vertical distance of the shadow, in relation to the text.
-    // //Blurring effect to the shadow, the larger the value, the greater the blur.
-    ctx.stroke();
-    ctx.restore();
+    actors.drawLasers(ctx, this);
   }
 
   update(deltaTimeInSeconds) {
@@ -2314,10 +2084,6 @@ class SharkHeadLaserEyes {
 
 class WindTurbine {
   constructor() {
-    this.image = preLoadedImageArray.find(
-      obj => obj.imageName === 'windTurbineSpriteSheet.png'
-    ).image;
-
     // get the sprite sheet array
     this.windTurbineSpriteXYArray = spriteSheetArrays.find(
       obj => obj.name === 'windTurbineSpriteXYArray'
@@ -2336,15 +2102,15 @@ class WindTurbine {
     this.sX = 0;
     this.sY = 0;
 
-    //this.dY = canvas.height - Math.round(getRandomArbitrary(100, 165));
+    //this.dY = resH - Math.round(getRandomArbitrary(100, 165));
     this.dWidth = this.sWidth / 1.1; /// 1.5;
     this.dHeight = this.sHeight / 1.1; // / 1.5;
 
     // we need to postion these on the landscape
     // but for the moment we'll just put on in the sky
     // this.dX = this.dWidth;
-    this.dX = canvas.width;
-    this.dY = canvas.height - this.dHeight - 200; //200
+    this.dX = resW;
+    this.dY = resH - this.dHeight - 200; //200
 
     // movement on the x-axis
     this.speed = masterGameSpeed;
@@ -2380,46 +2146,34 @@ class WindTurbine {
   }
 
   draw() {
-    ctx.drawImage(
-      this.image,
-      //this.sX * this.frame, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      //this.sX, //The x-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.windTurbineSpriteXYArray[this.frame].x,
-
-      this.sY, //The y-axis coordinate of the top left corner of the sub-rectangle of the source image to draw into the destination context.
-      this.sWidth, //The width of the sub-rectangle of the source image to draw into the destination context.
-      this.sHeight,
-      this.dX, // x coord in destination canvas in which to place the image
-      this.dY, // y coord in destination canvas in which to place the image
-      this.dWidth, //The width to draw the image in the destination canvas.
-      this.dHeight //The height to draw the image in the destination canvas.
-    );
+    actors.drawTurbine(ctx, this);
   }
 }
 
 //////////////////////////////////////////////
 /////// GAME LOOP ////////////////////////////
-function animate(timeStamp = 0) {
-  // guard clause
-  if (!gameInitialised) return;
+// The game world moves in fixed 1/60 second steps (fixedUpdate) and is drawn
+// once per display frame (render). Before, movement was applied once per
+// drawn frame, so on 120/144 Hz screens the balloon fell several times faster.
+const FIXED_DT = 1 / 60;
+let accumulator = 0;
+let lastFrameTime = null;
+let gamePaused = false;
+let showHitboxes = false;
+let hasPlayed = false;
 
-  // create deltaTime so animation runs based on time
-  deltaTimeInSeconds = (timeStamp - oldTimeStamp) / 1000;
-  oldTimeStamp = timeStamp;
-  accumulativeDeltaTimeInSeconds += deltaTimeInSeconds;
+// deletion of objects that are markedForDeletion
+function filterObjects(obj) {
+  let index = obj.length;
+  for (let i = index - 1; i >= 0; i--) {
+    if (obj[i].markedForDeletion) obj.splice(i, 1);
+  }
+}
 
-  //console.log(deltaTimeInSeconds);
-
-  // Limit the time skip
-  deltaTimeInSeconds = Math.min(deltaTimeInSeconds, 0.1);
-  // clear the canvas
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  collisionCtx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // console.log('delta time', deltaTimeInSeconds);
-
+// everything that changes the game world, in the same order as before
+function fixedUpdate(deltaTimeInSeconds) {
   switch (gameStatus) {
-    case 'gameStart':
+    case 'gameStart': {
       // game is running
       if (landscapeObjectArray.length === 0) {
         landscapeObjectArray.push(new Landscape());
@@ -2438,7 +2192,6 @@ function animate(timeStamp = 0) {
       // Occasionally, because of 'rounding', an item might not be placed and this
       // give a nice variance to objects that appear in the game
       let landscapeOffsetX = Math.round(Math.abs(landscapeObjectArray[0].sX));
-      // console.log(landscapeOffsetX);
       if (
         objectPlacementOnXAxis(landscapeOffsetX, 1550, windTurbinePlacement) ||
         objectPlacementOnXAxis(landscapeOffsetX, 2101, windTurbinePlacement) ||
@@ -2529,8 +2282,6 @@ function animate(timeStamp = 0) {
       }
 
       ///////////////////////////////////////////////////////
-      ///////////////////////////////////////////////////////
-      // console.log(landscapeObjectArray);
       // firing the update method in each object
       [
         ...cloudObjectArray,
@@ -2548,29 +2299,11 @@ function animate(timeStamp = 0) {
         ...balloonExplosionObjectArray,
         ...goldenCoinObjectArray,
       ].forEach(object => object.update(deltaTimeInSeconds));
-
-      // firing the draw mathod in each object
-      [
-        ...cloudObjectArray,
-        ...windTurbineObjectArray,
-        ...landscapeWaterObjectArray,
-        ...sharkFinObjectArray,
-        ...sharkHeadObjectArray,
-        ...sharkLaserObjectArray,
-        ...landscapeObjectArray,
-        ...cannonObjectArray,
-        ...cannonBallObjectArray,
-        ...iceGhostObjectArray,
-        ...easterIslandObjectArray,
-        ...easterIslandBallObjectArray,
-        ...balloonExplosionObjectArray,
-        ...goldenCoinObjectArray,
-        ...mathChallengeObjectArray,
-        ...scoreObjectArray,
-      ].forEach(object => object.draw(deltaTimeInSeconds));
+      mathChallengeObjectArray.forEach(object =>
+        object.update(deltaTimeInSeconds)
+      );
 
       ////////////////////////////////
-      // draw the math challenge score
       // if a coin has been hit, we want to move this coin to the answer area text,
       // and fade out all the other ones
       [...goldenCoinObjectArray].forEach(function (object) {
@@ -2596,7 +2329,6 @@ function animate(timeStamp = 0) {
         collisionDetectionObjectArray[0].updateLandScapeCollisionArray(
           deltaTimeInSeconds
         );
-        collisionDetectionObjectArray[0].draw(deltaTimeInSeconds);
         collisionDetectionObjectArray[0].detectCollisions();
       }
       /////////////////////////
@@ -2609,7 +2341,6 @@ function animate(timeStamp = 0) {
       if (balloonObjectArray.length !== 0) {
         balloonObjectArray[0].moveOnXAxis(deltaTimeInSeconds);
         balloonObjectArray[0].balloonMovementPhysics();
-        balloonObjectArray[0].draw();
       }
 
       /////////////////////////
@@ -2638,7 +2369,6 @@ function animate(timeStamp = 0) {
 
       /////////////////////////////////////
       // Golden Coin Management
-      // golden coins
       // At any one time, I want 3 coins on the screen.
       // One of those coins needs to be the current answer to the
       // maths problem shown, all three coinds must not have duplicates.
@@ -2654,7 +2384,6 @@ function animate(timeStamp = 0) {
         let goldenCoinsOnScreen = goldenCoinObjectArray.length;
         // if there's less than 3 coins on the screen
         if (goldenCoinsOnScreen < 3) {
-          // console.log('current answer ', currentCorrectAnswer);
           // does one of the coins have the maths solutions?
           let foundAnswer = goldenCoinObjectArray.find(
             e => e.randomNumber === currentCorrectAnswer
@@ -2667,8 +2396,14 @@ function animate(timeStamp = 0) {
             // create a coin that has any number on it OTHER than
             // the answer
             let notUnique = false;
+            let tries = 0;
             while (!notUnique) {
-              let randomNumber = Math.round(getRandomArbitrary(1, 10));
+              // adding picks any 1 to 10, as it always did; the other sums
+              // pick a believable near miss
+              let randomNumber =
+                settings.sums === 'add' || tries++ > 20
+                  ? Math.round(getRandomArbitrary(1, 10))
+                  : nearMiss(mathChallengeObjectArray[0]);
               let foundAnswer = goldenCoinObjectArray.find(
                 e => e.randomNumber === randomNumber
               );
@@ -2683,11 +2418,9 @@ function animate(timeStamp = 0) {
 
       // when the balloon gets across the landscape, trigger the
       // 'youWin' section of the game because the player has survived
-      // console.log(landscapeOffsetX);
-      //console.log(balloonObjectArray[0].dX);
-      // console.log(landscapeOffsetX);
       if (landscapeOffsetX > 16700) gameStatus = 'youWin';
       break;
+    }
 
     case 'youWin':
       // here we want the landscape to stop and the balloon to move to the right
@@ -2708,24 +2441,6 @@ function animate(timeStamp = 0) {
         ...goldenCoinObjectArray,
       ].forEach(object => object.update(deltaTimeInSeconds));
 
-      [
-        ...balloonObjectArray,
-        ...cloudObjectArray,
-        ...windTurbineObjectArray,
-        ...landscapeWaterObjectArray,
-        ...sharkFinObjectArray,
-        ...sharkHeadObjectArray,
-        ...sharkLaserObjectArray,
-        ...landscapeObjectArray,
-        ...cannonObjectArray,
-        ...cannonBallObjectArray,
-        ...iceGhostObjectArray,
-        ...easterIslandObjectArray,
-        ...easterIslandBallObjectArray,
-        ...mathChallengeObjectArray,
-        ...scoreObjectArray,
-      ].forEach(object => object.draw(deltaTimeInSeconds));
-
       balloonObjectArray[0].accelarateRightOffScreen(deltaTimeInSeconds);
 
       // when the win fanfare has played, fade out the scenary and show
@@ -2739,14 +2454,11 @@ function animate(timeStamp = 0) {
         [...scoreObjectArray].forEach(
           object => (object.markedForDeletion = true)
         );
-        // mathChallengeObjectArray[0].markedForDeletion = true;
-        // scoreObjectArray[0].markedForDeletion = true;
 
         if (youWinObjectArray.length === 0) {
           youWinObjectArray.push(new YouWin());
         }
         youWinObjectArray[0].update(deltaTimeInSeconds);
-        youWinObjectArray[0].draw(deltaTimeInSeconds);
       }
       // we need to adjust the master game speed of all object incrementally
       // smaller so that the landscape slows down to a stop
@@ -2767,20 +2479,17 @@ function animate(timeStamp = 0) {
         ...balloonExplosionObjectArray,
         ...goldenCoinObjectArray,
       ].forEach(function (object) {
-        // object.speed >= 0 ? (object.speed -= 0.1) : (object.speed = 0);
         object.speed = 0;
-        console.log(object.speed);
       });
 
-      // end the game loop if the 'Game Over' text has appeared and it's
-      // at it's maximum text size... this is when the gameloop can effectively
-      // end and nothing is moving on the screen.
+      // end the game once the 'You win' text has grown to full size:
+      // nothing moves on screen any more
       if (youWinObjectArray.length !== 0) {
         if (
           youWinObjectArray[0].fontSize === youWinObjectArray[0].maxfontSize
         ) {
-          console.log(youWinObjectArray[0].fontSize);
           gameStatus = false;
+          flightOver(true);
           // we need to stop the theme tune and put the volume back to 1 so that
           // it plays when the game restarts
           soundsArray.find(e => e.name === 'lifeIsBeautifulSound').sound.stop();
@@ -2789,35 +2498,12 @@ function animate(timeStamp = 0) {
             .sound.volume(1);
         }
       }
-
       break;
 
     case 'gameOverExplosion':
-      // This partfade of the game loop triggers when
-      // a collision is detected within the CollisionDetection object
-      console.log('Balloon crash game over');
-      // Display all the scene as it currently is with not update of movements
-      [
-        ...cloudObjectArray,
-        ...windTurbineObjectArray,
-        ...landscapeWaterObjectArray,
-        ...sharkFinObjectArray,
-        ...sharkHeadObjectArray,
-        ...sharkLaserObjectArray,
-        ...landscapeObjectArray,
-        ...cannonObjectArray,
-        ...cannonBallObjectArray,
-        ...iceGhostObjectArray,
-        ...easterIslandObjectArray,
-        ...easterIslandBallObjectArray,
-        ...balloonExplosionObjectArray,
-        ...goldenCoinObjectArray,
-        ...mathChallengeObjectArray,
-        ...scoreObjectArray,
-      ].forEach(object => object.draw(deltaTimeInSeconds));
-
-      // create one explosion object at the current location
-      // of the balloon
+      // This part of the game loop triggers when a collision is detected
+      // within the CollisionDetection object
+      // create one explosion object at the current location of the balloon
       if (balloonExplosionObjectArray.length === 0) {
         balloonExplosionObjectArray.push(
           new BalloonExplosion(
@@ -2828,9 +2514,6 @@ function animate(timeStamp = 0) {
       }
 
       balloonExplosionObjectArray[0].update(deltaTimeInSeconds);
-      balloonExplosionObjectArray[0].draw(deltaTimeInSeconds);
-
-      // fade out screen
 
       timeAfterExplosionBeforeDisplayingGameOverTimer += deltaTimeInSeconds;
       if (
@@ -2838,43 +2521,18 @@ function animate(timeStamp = 0) {
         timeAfterExplosionBeforeDisplayingGameOver
       )
         gameStatus = 'displayGameOverText';
-
       break;
 
     case 'displayGameOverText':
-      [
-        ...cloudObjectArray,
-        ...windTurbineObjectArray,
-        ...landscapeWaterObjectArray,
-        ...sharkFinObjectArray,
-        ...sharkHeadObjectArray,
-        ...sharkLaserObjectArray,
-        ...landscapeObjectArray,
-        ...cannonObjectArray,
-        ...cannonBallObjectArray,
-        ...iceGhostObjectArray,
-        ...easterIslandObjectArray,
-        ...easterIslandBallObjectArray,
-        ...balloonExplosionObjectArray,
-        ...goldenCoinObjectArray,
-        //  ...mathChallengeObjectArray,
-        //  ...scoreObjectArray,
-      ].forEach(object => object.draw(deltaTimeInSeconds));
-
+      // finish the explosion animation
       balloonExplosionObjectArray[0].update(deltaTimeInSeconds);
 
       if (gameOverObjectArray.length === 0) {
         gameOverObjectArray.push(new GameOver());
       }
-      // finish the explosion animation
       gameOverObjectArray[0].update(deltaTimeInSeconds);
-      gameOverObjectArray[0].draw();
-      // set the math challenge to be marked for deletion
-      //mathChallengeObjectArray[0].markedForDeletion = true;
 
-      // end the game loop if the 'Game Over' text has appeared and it's
-      // at it's maximum text size... this is when the gameloop can effectively
-      // end and nothing is moving on the screen.
+      // end the game once the 'Game Over' text has grown to full size
       if (
         gameOverObjectArray[0].fontSize === gameOverObjectArray[0].maxfontSize
       ) {
@@ -2888,18 +2546,9 @@ function animate(timeStamp = 0) {
           .sound.volume(1);
 
         gameStatus = false;
+        flightOver(false);
       }
-
       break;
-  }
-
-  //////////////////////////////////
-  // deletion of objects that are markedForDeletion
-  function filterObjects(obj) {
-    let index = obj.length;
-    for (let i = index - 1; i >= 0; i--) {
-      if (obj[i].markedForDeletion) obj.splice(i, 1);
-    }
   }
 
   [
@@ -2920,41 +2569,429 @@ function animate(timeStamp = 0) {
   ].forEach(x => {
     filterObjects(x);
   });
-
-  if (gameStatus !== false) requestAnimationFrame(animate);
-
-  // console.log(landscapeObjectArray);
-  // console.log(balloonObjectArray);
-  // console.log(balloonExplosionObjectArray);
-  // console.log(landscapeWaterObjectArray);
-  // console.log(cloudObjectArray);
-  // console.log(cannonObjectArray);
-  // console.log(cannonBallObjectArray);
-  // console.log(windTurbineObjectArray);
-  // console.log(sharkFinObjectArray);
-  // console.log(sharkHeadObjectArray);
-  // console.log(sharkLaserObjectArray);
-  // console.log(iceGhostObjectArray);
-  // console.log(easterIslandObjectArray);
-  // console.log(easterIslandBallObjectArray);
-  // console.log(collisionDetectionObjectArray);
-  // console.log(goldenCoinObjectArray);
-  // console.log(mathChallengeObjectArray);
-  // console.log(scoreObjectArray);
-  // console.log(gameOverObjectArray);
 }
+
+// what the artwork needs to see of the game: things for eyes to follow, the
+// score, and whether the burner is on
+actors.setWorld(() => ({
+  balloon: balloonObjectArray[0],
+  coins: goldenCoinObjectArray,
+  balls: cannonBallObjectArray,
+  ghosts: iceGhostObjectArray,
+  rings: easterIslandBallObjectArray,
+  score: scoreObjectArray[0],
+  burning: spaceBarState,
+  winning: gameStatus === 'youWin',
+  flying: gameStatus === 'gameStart',
+}));
+
+// how far the world has scrolled (the landscape's position)
+function cameraX() {
+  if (debugCamera !== null) return debugCamera;
+  return landscapeObjectArray.length !== 0 ? landscapeObjectArray[0].sX : 0;
+}
+
+// the sky alone, while the level is loading (or if it could not be loaded)
+function plainSky() {
+  const sky = ctx.createLinearGradient(0, 0, 0, resH);
+  sky.addColorStop(0, '#2A97EC');
+  sky.addColorStop(1, '#CFF0FF');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, resW, resH);
+}
+
+// the world behind the game objects; `between` draws the objects that sit
+// among the scenery, in order
+function drawWorld(cam, between) {
+  const t = artTime;
+  ctx.save();
+  world.drawBackground(ctx, cam, t);
+  cloudObjectArray.forEach(cloud => world.drawGameCloud(ctx, cloud));
+  world.drawNearLayer(ctx, cam, t);
+  ctx.restore();
+  between.behindGround();
+  ctx.save();
+  world.drawGround(ctx, cam);
+  world.drawWater(ctx, cam, t);
+  ctx.restore();
+  between.inWater();
+  ctx.save();
+  world.drawGroundLive(ctx, cam, t);
+  ctx.restore();
+}
+
+// draws the current state; it never changes the game world
+function render(status) {
+  ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+  ctx.clearRect(0, 0, resW, resH);
+  ctx.textAlign = 'start';
+  ctx.font = '100px Impact';
+  const draw = list =>
+    world.skip.objects || list.forEach(object => object.draw(FIXED_DT));
+  const cam = cameraX();
+  actors.beginFrame(artTime, cam);
+
+  // the scene shakes when something goes bang (the sums and score don't)
+  const [shakeX, shakeY] = actors.shakeOffset();
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+  if (level.ready) {
+    drawWorld(cam, {
+      behindGround: () => draw(windTurbineObjectArray),
+      inWater: () =>
+        draw([
+          ...sharkFinObjectArray,
+          ...sharkHeadObjectArray,
+          ...sharkLaserObjectArray,
+        ]),
+    });
+  } else {
+    // a plain sky, if the level data could not be loaded
+    plainSky();
+    draw([
+      ...cloudObjectArray,
+      ...windTurbineObjectArray,
+      ...sharkHeadObjectArray,
+      ...sharkLaserObjectArray,
+    ]);
+  }
+  actors.drawParticles(ctx, false);
+  draw([
+    ...cannonObjectArray,
+    ...cannonBallObjectArray,
+    ...iceGhostObjectArray,
+    ...easterIslandObjectArray,
+    ...easterIslandBallObjectArray,
+  ]);
+  // a coin on its way to the answer slot is drawn over the HUD instead
+  const coins = goldenCoinObjectArray.filter(c => !c.thisCoinHasBeenHit);
+  switch (status) {
+    case 'gameStart':
+      draw([...coins, ...balloonObjectArray]);
+      break;
+    case 'youWin':
+      draw(balloonObjectArray);
+      break;
+    case 'gameOverExplosion':
+    case 'displayGameOverText':
+      draw([...coins, ...balloonExplosionObjectArray]);
+      break;
+  }
+  if (level.ready) {
+    ctx.save();
+    world.drawForeground(ctx, cam, artTime);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // the sum, the journey and the score, then any coin flying into the slot
+  const sum = mathChallengeObjectArray[0];
+  if (!world.skip.objects) {
+    hud.draw(
+      ctx,
+      {
+        sum: sum && {
+          a: sum.aValue,
+          b: sum.bValue,
+          op: sum.op,
+          scroll: sum.mathProblemScroll,
+        },
+        pending: goldenCoinObjectArray.some(c => c.thisCoinHasBeenHit),
+        score: scoreObjectArray[0] ? scoreObjectArray[0].score : 0,
+        cam,
+        burning: spaceBarState,
+        steering: arrowLeftState || arrowRightState,
+        first: status === 'gameStart',
+        touch: touchMode,
+      },
+      artTime
+    );
+  }
+  draw(goldenCoinObjectArray.filter(c => c.thisCoinHasBeenHit));
+  // sparkles and bursts on top (at the end of a flight, over its panel)
+  if (gameStatus) actors.drawParticles(ctx, true);
+  if (touchMode && status === 'gameStart')
+    screens.drawTouch(ctx, artTime, heldControls());
+  // the cloud wipe as a flight begins
+  screens.drawWipe(ctx, (artTime - wipeAt) / 0.8);
+
+  // developer view of the collision outlines (press H)
+  collisionCtx.clearRect(0, 0, collisionCanvas.width, collisionCanvas.height);
+  if (
+    showHitboxes &&
+    balloonObjectArray.length !== 0 &&
+    collisionDetectionObjectArray.length !== 0 &&
+    collisionDetectionObjectArray[0].newLandcapeCollisionArray
+  ) {
+    collisionDetectionObjectArray[0].draw();
+  }
+}
+
+// the title screen: the start of the level drifting behind the name and the
+// choices (and a loading bar until everything is ready)
+function drawTitleScreen() {
+  ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+  ctx.clearRect(0, 0, resW, resH);
+  const cam =
+    debugCamera !== null ? debugCamera : 200 + Math.sin(artTime * 0.05) * 200;
+  if (level.ready) {
+    actors.beginFrame(artTime, cam);
+    const nothing = () => {};
+    drawWorld(cam, { behindGround: nothing, inWater: nothing });
+    ctx.save();
+    world.drawForeground(ctx, cam, artTime);
+    ctx.restore();
+  } else plainSky();
+  if (!fontsReady || world.skip.prompt) return;
+  // the credits are a page of their own (only its Back button can be pressed)
+  if (screen === 'credits') {
+    screens.drawCredits(ctx, artTime);
+    return;
+  }
+  screens.drawTitle(
+    ctx,
+    artTime,
+    {
+      ready: gameInitialised,
+      progress: soundsArray.length ? loadedCount / soundsArray.length : 0,
+      mode: settings.mode,
+      sums: settings.sums,
+      best: getBest(),
+      soundOn: !Howler._muted,
+      touch: touchMode,
+    },
+    actors.drawTitleBalloon
+  );
+  actors.drawParticles(ctx, true);
+}
+
+// the end of a flight: the scene stays, a panel drops in
+function drawEndScreen() {
+  screens.drawEnd(ctx, artTime, {
+    win: endInfo.win,
+    since: artTime - endInfo.at,
+    progress: endInfo.progress,
+    right: endInfo.right,
+    wrong: endInfo.wrong,
+    best: endInfo.best,
+    newBest: endInfo.newBest,
+    touch: touchMode,
+  });
+  actors.drawParticles(ctx, true);
+}
+
+// a wrong answer that looks right: one or two either side, or the next or
+// previous number in the times table
+function nearMiss(m) {
+  const n = m.mathAnswer;
+  const options = [n + 1, n - 1, n + 2, n - 2];
+  if (m.op === '\u00d7')
+    options.push(m.aValue * (m.bValue + 1), m.aValue * (m.bValue - 1));
+  const ok = options.filter(v => v >= 0 && v !== n);
+  return ok[Math.floor(Math.random() * ok.length)];
+}
+
+// how hard the flight is. Normal is the original game, value for value;
+// Little Pilots scrolls slower, floats more gently and has fewer cannon shots
+const DIFFICULTY = {
+  normal: {
+    speed: 80,
+    heatAdd: 7,
+    dischargeLow: 0.02,
+    dischargeHigh: 0.04,
+    cannonWait: 1,
+    loopTheme: false,
+  },
+  little: {
+    speed: 60,
+    heatAdd: 5.6,
+    dischargeLow: 0.014,
+    dischargeHigh: 0.028,
+    cannonWait: 1.8,
+    loopTheme: true,
+  },
+};
+let diff = DIFFICULTY.normal;
+
+// the player's choices on the title screen, remembered between visits
+const settings = { mode: 'normal', sums: 'add' };
+try {
+  Object.assign(
+    settings,
+    JSON.parse(localStorage.getItem('balloonman.settings') || '{}')
+  );
+} catch (err) {
+  // (no saved choices)
+}
+function saveSettings() {
+  try {
+    localStorage.setItem('balloonman.settings', JSON.stringify(settings));
+  } catch (err) {
+    // (the browser won't store them; they last until the page closes)
+  }
+}
+// the best number of sums right, for each mode and kind of sum
+function getBest() {
+  try {
+    const all = JSON.parse(localStorage.getItem('balloonman.best') || '{}');
+    return all[`${settings.mode}:${settings.sums}`] || 0;
+  } catch (err) {
+    return 0;
+  }
+}
+function setBest(n) {
+  try {
+    const all = JSON.parse(localStorage.getItem('balloonman.best') || '{}');
+    all[`${settings.mode}:${settings.sums}`] = n;
+    localStorage.setItem('balloonman.best', JSON.stringify(all));
+  } catch (err) {
+    // (not saved)
+  }
+}
+// this flight's answers, and how it ended
+const stats = { right: 0, wrong: 0 };
+let endInfo = null;
+// 'title' or 'credits' when showing them, otherwise null
+let screen = 'title';
+let titleRow = 'mode';
+let wipeAt = -9;
+let fontsReady = false;
+// play a sound panned towards where it happens on screen (x in game pixels)
+function playAt(sound, x) {
+  sound.stereo(
+    Math.max(-0.7, Math.min(0.7, ((x - resW / 2) / (resW / 2)) * 0.7))
+  );
+  return sound.play();
+}
+
+// the numbers that can appear on coins for each kind of sum
+function coinNumbers(sums) {
+  const n = sums === 'times' ? 102 : 12;
+  return Array.from({ length: n + 1 }, (v, i) => i);
+}
+function answerGiven(correct, chosen) {
+  // the music dips a little under the answer sound
+  const theme = soundsArray.find(e => e.name === 'lifeIsBeautifulSound').sound;
+  theme.fade(theme.volume(), 0.5, 150);
+  setTimeout(() => {
+    if (gameStatus === 'gameStart') theme.fade(theme.volume(), 1, 500);
+  }, 900);
+  const m = mathChallengeObjectArray[0];
+  if (correct) stats.right++;
+  else stats.wrong++;
+  hud.answer(
+    correct,
+    { a: m.aValue, b: m.bValue, op: m.op, answer: m.mathAnswer },
+    chosen
+  );
+}
+function flightOver(win) {
+  const best = getBest();
+  const newBest = stats.right > best;
+  if (newBest) setBest(stats.right);
+  endInfo = {
+    win,
+    status: win ? 'youWin' : 'displayGameOverText',
+    at: artTime,
+    progress: Math.min(1, cameraX() / 16700),
+    right: stats.right,
+    wrong: stats.wrong,
+    best: Math.max(best, stats.right),
+    newBest,
+  };
+}
+
+// the clock for the artwork (swaying grass, waves...), which never affects play
+let artTime = 0;
+// a camera position forced by the screenshot tests (see window.__bm)
+let debugCamera = null;
+let debugHold = false;
+let debugInvincible = false;
+
+let renderErrorShown = false;
+function frame(timeStamp) {
+  requestAnimationFrame(frame);
+  const frameStart = performance.now();
+  if (lastFrameTime === null) lastFrameTime = timeStamp;
+  // same 0.1 second cap as before, so a stalled tab doesn't jump ahead
+  const elapsed = Math.max(
+    0,
+    Math.min((timeStamp - lastFrameTime) / 1000, 0.1)
+  );
+  lastFrameTime = timeStamp;
+  if (!gamePaused) artTime += elapsed;
+
+  const statusBefore = gameStatus;
+  if (gameStatus && !gamePaused && !debugHold) {
+    accumulator += elapsed;
+    let steps = 0;
+    // a 1 ms tolerance stops real-world frame jitter from alternating
+    // between 0 and 2 steps per frame on a 60 Hz screen
+    while (accumulator >= FIXED_DT - 0.001 && steps < 6 && gameStatus) {
+      fixedUpdate(FIXED_DT);
+      accumulator -= FIXED_DT;
+      steps++;
+    }
+  }
+
+  try {
+    screens.beginUi();
+    if (gameStatus) render(gameStatus);
+    else if (screen) drawTitleScreen();
+    else if (endInfo) {
+      render(endInfo.status);
+      drawEndScreen();
+    } else if (statusBefore) render(statusBefore);
+    if (gamePaused && gameStatus)
+      screens.drawPause(ctx, artTime, { soundOn: !Howler._muted });
+    if (touchMode && window.innerHeight > window.innerWidth) {
+      if (gameStatus === 'gameStart') setPaused(true);
+      screens.drawRotate(ctx, artTime);
+    }
+  } catch (err) {
+    if (!renderErrorShown) console.error(err);
+    renderErrorShown = true;
+  }
+  // paint the next stretch of scenery, a slice at a time, while this frame
+  // has time to spare, so it is ready before it scrolls into view
+  if (level.ready && !world.skip.prepare)
+    while (performance.now() - frameStart < 9 && world.prepareAhead());
+  while (performance.now() - frameStart < 10 && actors.warmStep());
+  canvas.style.cursor =
+    gameStatus === 'gameStart' && !gamePaused
+      ? 'none'
+      : screens.hitTest(...screens.ui.pointer)
+      ? 'pointer'
+      : 'default';
+}
+requestAnimationFrame(frame);
+
+// keep the whole 16:9 game visible in any window shape (letterboxed), and
+// render at the screen's real resolution (capped at 1920 wide for speed)
+let renderScale = 1;
+function fitCanvas() {
+  const scale = Math.min(window.innerWidth / resW, window.innerHeight / resH);
+  for (const c of [canvas, collisionCanvas]) {
+    c.style.width = `${Math.floor(resW * scale)}px`;
+    c.style.height = `${Math.floor(resH * scale)}px`;
+  }
+  const backing = Math.max(
+    480,
+    Math.min(resW, Math.round(resW * scale * (window.devicePixelRatio || 1)))
+  );
+  if (canvas.width !== backing) {
+    canvas.width = backing;
+    canvas.height = Math.round((backing * resH) / resW);
+  }
+  renderScale = canvas.width / resW;
+  // the artwork's cached pictures are painted at this resolution
+  style.setScale(renderScale);
+}
+window.addEventListener('resize', fitCanvas);
+fitCanvas();
 
 //////////////////////////////////////////////
 // Event listeners ///////////////////////////
-//press S to start the game
-// document.addEventListener('keydown', function (e) {
-//   console.log(e.code);
-//   if (e.code === 'KeyS') {
-//     preLoadAssets();
-//   } else {
-//     console.log('Press S key to preload assets');
-//   }
-// });
 
 // when the game is over and 'Game Over' text appears
 // we need to clear all the arrays so that the game
@@ -2983,7 +3020,6 @@ function resetGame() {
     scoreObjectArray,
     gameOverObjectArray,
     youWinObjectArray,
-    //].forEach(element => (element = []));
   ].forEach(element => element.splice(0, element.length));
 
   // clear the arrays holding the last position that objects were placed
@@ -2996,37 +3032,108 @@ function resetGame() {
     easterIslandPlacement,
   ].forEach(element => (element.x = 0));
 
-  oldTimeStamp = 0;
   spaceBarState = false;
   arrowLeftState = false;
   arrowRightState = false;
   timeAfterExplosionBeforeDisplayingGameOverTimer = 0;
+  timeAfterFanfareTimer = 0;
   timeToNextCloud = 0;
-  canvas.width = 1920;
-  canvas.height = 1080;
   // stop the 'you win' fanfare. This will stop it playing if the
   // user presses the space bar (to start a new game) before it's finished playing
   soundsArray.find(e => e.name === 'handyIntroduction').sound.stop();
 }
 
+// start a new game: the first step runs straight away with no time passed,
+// exactly as the old loop's first frame did
+function startGame() {
+  // a fade leaves the theme's volume at 0, which new plays would inherit
+  const theme = soundsArray.find(e => e.name === 'lifeIsBeautifulSound').sound;
+  theme.stop();
+  theme.volume(1);
+  // the chosen mode (before any game objects are made, as they read it)
+  diff = DIFFICULTY[settings.mode] || DIFFICULTY.normal;
+  masterGameSpeed = diff.speed;
+  theme.loop(diff.loopTheme);
+  actors.warmLater(coinNumbers(settings.sums));
+  gameStatus = 'gameStart';
+  hasPlayed = true;
+  gamePaused = false;
+  resetGame();
+  actors.clearEffects();
+  hud.reset();
+  stats.right = 0;
+  stats.wrong = 0;
+  endInfo = null;
+  screen = null;
+  wipeAt = artTime;
+  accumulator = 0;
+  fixedUpdate(0);
+  render(gameStatus);
+  lastFrameTime = performance.now();
+}
+
+// let go of every key, e.g. when the window loses focus mid-flight
+function releaseKeys() {
+  spaceBarState = false;
+  arrowLeftState = false;
+  arrowRightState = false;
+  touches.clear();
+}
+
+function setPaused(paused) {
+  releaseKeys();
+  if (gameStatus !== 'gameStart' || paused === gamePaused) return;
+  gamePaused = paused;
+  const theme = soundsArray.find(e => e.name === 'lifeIsBeautifulSound');
+  if (theme) paused ? theme.sound.pause() : theme.sound.play();
+  // don't count the paused time as game time
+  lastFrameTime = null;
+}
+
 //press spaceBar to start the game
 document.addEventListener('keydown', function (e) {
-  // console.log(e.code);
-  if (e.code === 'Space' && gameInitialised && !gameStatus) {
-    gameStatus = 'gameStart';
-    // console.log('gameStatusgameStatus--------------- ', gameStatus);
-    // console.log('gameInitialised--------------- ', gameInitialised);
-    resetGame();
-    animate();
-  } else {
-    // console.log('Press enter to preload assets');
+  touchMode = false;
+  if (e.code === 'Space' && gameInitialised && !gameStatus && !e.repeat) {
+    startGame();
   }
-  if (e.code === 'Space' && gameInitialised && gameStatus === 'gameStart') {
+  if (
+    e.code === 'Space' &&
+    gameInitialised &&
+    gameStatus === 'gameStart' &&
+    !gamePaused
+  ) {
     spaceBarState = true;
+  }
+  if (e.code === 'KeyP' || e.code === 'Escape') setPaused(!gamePaused);
+  if (e.code === 'KeyM') Howler.mute(!Howler._muted);
+  if (e.code === 'KeyF') toggleFullscreen();
+  // the title screen's choices, credits, and back to the title
+  if (!gameStatus) {
+    if (e.code === 'KeyC' && screen)
+      screen = screen === 'credits' ? 'title' : 'credits';
+    else if (e.code === 'Escape' && screen === 'credits') screen = 'title';
+    else if (e.code === 'KeyT' && !screen) press('title');
+    else if (screen === 'title') {
+      if (e.code === 'ArrowUp' || e.code === 'ArrowDown')
+        titleRow = titleRow === 'mode' ? 'sums' : 'mode';
+      const step =
+        e.code === 'ArrowRight' ? 1 : e.code === 'ArrowLeft' ? -1 : 0;
+      if (step) {
+        const list =
+          titleRow === 'mode' ? ['normal', 'little'] : ['add', 'sub', 'times'];
+        const i = list.indexOf(settings[titleRow]);
+        settings[titleRow] = list[(i + step + list.length) % list.length];
+        saveSettings();
+      }
+      screens.ui.focus = `${titleRow}:${settings[titleRow]}`;
+    }
+  }
+  if (e.code === 'KeyH') {
+    showHitboxes = !showHitboxes;
+    collisionCanvas.style.opacity = showHitboxes ? '0.45' : '0';
   }
 });
 
-//press spaceBar to start the game
 document.addEventListener('keyup', function (e) {
   if (e.code === 'Space' && gameInitialised && gameStatus === 'gameStart') {
     spaceBarState = false;
@@ -3036,7 +3143,7 @@ document.addEventListener('keyup', function (e) {
 // balloon left right controls
 // balloon right
 document.addEventListener('keydown', function (e) {
-  if (e.code === 'ArrowRight') {
+  if (e.code === 'ArrowRight' && !gamePaused) {
     arrowRightState = true;
   }
 });
@@ -3047,7 +3154,7 @@ document.addEventListener('keyup', function (e) {
 });
 // balloon left
 document.addEventListener('keydown', function (e) {
-  if (e.code === 'ArrowLeft') {
+  if (e.code === 'ArrowLeft' && !gamePaused) {
     arrowLeftState = true;
   }
 });
@@ -3056,6 +3163,163 @@ document.addEventListener('keyup', function (e) {
     arrowLeftState = false;
   }
 });
+
+// pause automatically if the window loses focus or the tab is hidden, and let
+// go of the keys: otherwise a missed key-up leaves the balloon rising
+window.addEventListener('blur', () => setPaused(true));
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) setPaused(true);
+});
+// clicks and taps on the screens' buttons
+function pointerToGame(e) {
+  const r = canvas.getBoundingClientRect();
+  return [
+    ((e.clientX - r.left) / r.width) * resW,
+    ((e.clientY - r.top) / r.height) * resH,
+  ];
+}
+// fingers on the on-screen controls (tablets): pointer id -> 'up', 'left',
+// 'right' or null (slid off). They press the same keys as the keyboard.
+let touchMode = false;
+const touches = new Map();
+function heldControls() {
+  return new Set([...touches.values()].filter(Boolean));
+}
+function applyTouches() {
+  if (gameStatus !== 'gameStart' || gamePaused) return;
+  const held = heldControls();
+  spaceBarState = held.has('up');
+  arrowLeftState = held.has('left');
+  arrowRightState = held.has('right');
+}
+canvas.addEventListener('pointermove', e => {
+  const at = pointerToGame(e);
+  screens.ui.pointer = at;
+  if (touches.has(e.pointerId)) {
+    touches.set(e.pointerId, screens.touchControlAt(...at));
+    applyTouches();
+  }
+});
+canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch') touchMode = true;
+  const [x, y] = pointerToGame(e);
+  if (touchMode && gameStatus === 'gameStart' && !gamePaused) {
+    const q = screens.TOUCH.pause;
+    if (Math.hypot(x - q.cx, y - q.cy) < q.r + 16) {
+      setPaused(true);
+      return;
+    }
+    const control = screens.touchControlAt(x, y);
+    if (control) {
+      touches.set(e.pointerId, control);
+      canvas.setPointerCapture(e.pointerId);
+      applyTouches();
+      return;
+    }
+  }
+  const id = screens.hitTest(x, y);
+  if (id) press(id);
+  else if (gamePaused) setPaused(false);
+});
+const liftFinger = e => {
+  if (touches.delete(e.pointerId)) applyTouches();
+};
+canvas.addEventListener('pointerup', liftFinger);
+canvas.addEventListener('pointercancel', liftFinger);
+function press(id) {
+  if (id === 'start') {
+    if (gameInitialised && !gameStatus) startGame();
+  } else if (id.startsWith('mode:')) {
+    settings.mode = id.slice(5);
+    saveSettings();
+  } else if (id.startsWith('sums:')) {
+    settings.sums = id.slice(5);
+    saveSettings();
+  } else if (id === 'sound') Howler.mute(!Howler._muted);
+  else if (id === 'full') toggleFullscreen();
+  else if (id === 'credits') screen = 'credits';
+  else if (id === 'back') screen = 'title';
+  else if (id === 'resume') setPaused(false);
+  else if (id === 'title') {
+    endInfo = null;
+    screen = 'title';
+    actors.clearEffects();
+  }
+}
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(() => {});
+}
+
+// hook for the automated tests and screenshots
+window.__bm = {
+  get status() {
+    return { gameStatus, gameInitialised, gamePaused, hasPlayed };
+  },
+  // the answer to the sum on screen
+  get sum() {
+    const m = mathChallengeObjectArray[0];
+    return m ? m.mathAnswer : null;
+  },
+  get arrays() {
+    return {
+      landscapeObjectArray,
+      balloonObjectArray,
+      cannonObjectArray,
+      cannonBallObjectArray,
+      windTurbineObjectArray,
+      sharkFinObjectArray,
+      sharkHeadObjectArray,
+      iceGhostObjectArray,
+      easterIslandObjectArray,
+      easterIslandBallObjectArray,
+      goldenCoinObjectArray,
+      cloudObjectArray,
+      balloonExplosionObjectArray,
+      mathChallengeObjectArray,
+      scoreObjectArray,
+    };
+  },
+  // look at any part of the level (drawing only; null follows the game again)
+  viewAt(x) {
+    debugCamera = x;
+  },
+  setArtTime(t) {
+    artTime = t;
+  },
+  skip: world.skip,
+  // freeze the game (drawing carries on), e.g. to photograph a moment
+  set hold(v) {
+    debugHold = !!v;
+  },
+  get hold() {
+    return debugHold;
+  },
+  set invincible(v) {
+    debugInvincible = !!v;
+  },
+  // put a game object on screen: __bm.spawn('Cannon', ['left'], { dX: 400 })
+  spawn(name, args = [], props = {}) {
+    const kinds = {
+      Cannon: [Cannon, cannonObjectArray],
+      CannonBall: [CannonBall, cannonBallObjectArray],
+      WindTurbine: [WindTurbine, windTurbineObjectArray],
+      SharkFin: [SharkFin, sharkFinObjectArray],
+      SharkHead: [SharkHead, sharkHeadObjectArray],
+      SharkHeadLaserEyes: [SharkHeadLaserEyes, sharkLaserObjectArray],
+      IceGhost: [IceGhost, iceGhostObjectArray],
+      EasterIsland: [EasterIsland, easterIslandObjectArray],
+      EasterIslandBall: [EasterIslandBall, easterIslandBallObjectArray],
+      GoldenCoin: [GoldenCoin, goldenCoinObjectArray],
+      BalloonExplosion: [BalloonExplosion, balloonExplosionObjectArray],
+    };
+    const [Kind, list] = kinds[name];
+    const o = Object.assign(new Kind(...args), props);
+    list.push(o);
+    return list.length - 1;
+  },
+  level,
+};
 
 //test
 /*

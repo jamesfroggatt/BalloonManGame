@@ -1,24 +1,47 @@
-body {
-  background: white;
-  width: 100vw;
-  height: 100vh;
-
-  overflow: hidden;
+/* the game's fonts, bundled so it works offline (SIL Open Font License, see
+   fonts/OFL-*.txt) */
+@font-face {
+  font-family: 'Lilita One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('../fonts/LilitaOne-Latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Fredoka';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: block;
+  src: url('../fonts/Fredoka-Latin.woff2') format('woff2');
 }
 
+html,
+body {
+  margin: 0;
+  /* no scrolling, zooming or text selection when fingers play the game */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* the letterbox bars around the game */
+  background: #0f1a2e;
+}
+
+/* the game keeps its 16:9 shape and is centred in any window; main.js sets
+   the on-screen width and height */
 canvas {
   background: skyblue;
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
 #collisionCanvas {
-  /* background: red;*/
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
+  background: transparent;
+  pointer-events: none;
   opacity: 0;
 }
